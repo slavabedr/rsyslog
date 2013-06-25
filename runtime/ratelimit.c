@@ -128,8 +128,8 @@ tellLostCnt(ratelimit_t *ratelimit)
 		snprintf((char*)msgbuf, sizeof(msgbuf),
 			 "%s: %u messages lost due to rate-limiting",
 			 ratelimit->name, ratelimit->missed);
-		logmsgInternal(RS_RET_RATE_LIMITED, LOG_SYSLOG|LOG_INFO, msgbuf, 0);
 		ratelimit->missed = 0;
+		logmsgInternal(RS_RET_RATE_LIMITED, LOG_SYSLOG|LOG_INFO, msgbuf, 0);
 	}
 }
 
@@ -150,16 +150,25 @@ withinRatelimit(ratelimit_t *ratelimit, time_t tt)
 		goto finalize_it;
 	}
 
+	/* we primarily need "NoTimeCache" mode for imjournal, as it
+	 * sets the message generation time to the journal timestamp.
+	 * As such, we do not get a proper indication of the actual
+	 * message rate. To prevent this, we need to query local
+	 * system time ourselvs.
+	 */
+	if(ratelimit->bNoTimeCache)
+		tt = time(NULL);
+
 	assert(ratelimit->burst != 0);
 
 	if(ratelimit->begin == 0)
 		ratelimit->begin = tt;
 
-	/* resume if we go out of out time window */
+	/* resume if we go out of time window */
 	if(tt > ratelimit->begin + ratelimit->interval) {
-		tellLostCnt(ratelimit);
 		ratelimit->begin = 0;
 		ratelimit->done = 0;
+		tellLostCnt(ratelimit);
 	}
 
 	/* do actual limit check */
@@ -167,13 +176,13 @@ withinRatelimit(ratelimit_t *ratelimit, time_t tt)
 		ratelimit->done++;
 		ret = 1;
 	} else {
-		if(ratelimit->missed == 0) {
+		ratelimit->missed++;
+		if(ratelimit->missed == 1) {
 			snprintf((char*)msgbuf, sizeof(msgbuf),
 			         "%s: begin to drop messages due to rate-limiting",
 				 ratelimit->name);
 			logmsgInternal(RS_RET_RATE_LIMITED, LOG_SYSLOG|LOG_INFO, msgbuf, 0);
 		}
-		ratelimit->missed++;
 		ret = 0;
 	}
 
@@ -202,7 +211,9 @@ ratelimitMsg(ratelimit_t *ratelimit, msg_t *pMsg, msg_t **ppRepMsg)
 	DEFiRet;
 
 	*ppRepMsg = NULL;
-	if(ratelimit->interval) {
+	/* Only the messages having severity level at or below the
+	 * treshold (the value is >=) are subject to ratelimiting. */
+	if(ratelimit->interval && (pMsg->iSeverity >= ratelimit->severity)) {
 		if(withinRatelimit(ratelimit, pMsg->ttGenTime) == 0) {
 			msgDestruct(&pMsg);
 			ABORT_FINALIZE(RS_RET_DISCARDMSG);
@@ -284,6 +295,7 @@ ratelimitNew(ratelimit_t **ppThis, char *modname, char *dynname)
 		namebuf[sizeof(namebuf)-1] = '\0'; /* to be on safe side */
 		pThis->name = strdup(namebuf);
 	}
+	/* pThis->severity == 0 - all messages are ratelimited */
 	pThis->bReduceRepeatMsgs = loadConf->globals.bReduceRepeatMsgs;
 	*ppThis = pThis;
 finalize_it:
@@ -314,6 +326,21 @@ ratelimitSetThreadSafe(ratelimit_t *ratelimit)
 {
 	ratelimit->bThreadSafe = 1;
 	pthread_mutex_init(&ratelimit->mut, NULL);
+}
+void
+ratelimitSetNoTimeCache(ratelimit_t *ratelimit)
+{
+	ratelimit->bNoTimeCache = 1;
+	pthread_mutex_init(&ratelimit->mut, NULL);
+}
+
+/* Severity level determines which messages are subject to
+ * ratelimiting. Default (no value set) is all messages.
+ */
+void
+ratelimitSetSeverity(ratelimit_t *ratelimit, intTiny severity)
+{
+	ratelimit->severity = severity;
 }
 
 void
@@ -356,4 +383,3 @@ ratelimitModInit(void)
 finalize_it:
 	RETiRet;
 }
-

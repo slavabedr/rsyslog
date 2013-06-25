@@ -7,7 +7,7 @@
  * of the "old" message code without any modifications. However, it
  * helps to have things at the right place one we go to the meat of it.
  *
- * Copyright 2007-2012 Rainer Gerhards and Adiscon GmbH.
+ * Copyright 2007-2013 Rainer Gerhards and Adiscon GmbH.
  *
  * This file is part of the rsyslog runtime library.
  *
@@ -74,6 +74,18 @@ DEFobjCurrIf(regexp)
 DEFobjCurrIf(prop)
 DEFobjCurrIf(net)
 DEFobjCurrIf(var)
+
+static char *two_digits[100] = {
+	"00", "01", "02", "03", "04", "05", "06", "07", "08", "09",
+	"10", "11", "12", "13", "14", "15", "16", "17", "18", "19",
+	"20", "21", "22", "23", "24", "25", "26", "27", "28", "29",
+	"30", "31", "32", "33", "34", "35", "36", "37", "38", "39",
+	"40", "41", "42", "43", "44", "45", "46", "47", "48", "49",
+	"50", "51", "52", "53", "54", "55", "56", "57", "58", "59",
+	"60", "61", "62", "63", "64", "65", "66", "67", "68", "69",
+	"70", "71", "72", "73", "74", "75", "76", "77", "78", "79",
+	"80", "81", "82", "83", "84", "85", "86", "87", "88", "89",
+	"90", "91", "92", "93", "94", "95", "96", "97", "98", "99"};
 
 static struct {
 	uchar *pszName;
@@ -281,9 +293,15 @@ static char *syslog_fac_names[24] = { "kern", "user", "mail", "daemon", "auth", 
 			    	      "news", "uucp", "cron", "authpriv", "ftp", "ntp", "audit",
 			    	      "alert", "clock", "local0", "local1", "local2", "local3",
 			    	      "local4", "local5", "local6", "local7" };
+/* length of the facility names string (for optimizatiions) */
+static short len_syslog_fac_names[24] = { 4, 4, 4, 6, 4, 6, 3,
+			    	          4, 4, 4, 8, 3, 3, 5,
+			    	          5, 5, 6, 6, 6, 6,
+			    	          6, 6, 6, 6 };
 
 /* table of severity names (in numerical order)*/
 static char *syslog_severity_names[8] = { "emerg", "alert", "crit", "err", "warning", "notice", "info", "debug" };
+static short len_syslog_severity_names[8] = { 5, 5, 4, 3, 7, 6, 4, 5 };
 
 /* numerical values as string - this is the most efficient approach to convert severity
  * and facility values to a numerical string... -- rgerhars, 2009-06-17
@@ -319,6 +337,37 @@ MsgUnlock(msg_t *pThis)
 }
 
 
+/* set RcvFromIP name in msg object WITHOUT calling AddRef.
+ * rgerhards, 2013-01-22
+ */
+static inline void
+MsgSetRcvFromIPWithoutAddRef(msg_t *pThis, prop_t *new)
+{
+	if(pThis->pRcvFromIP != NULL)
+		prop.Destruct(&pThis->pRcvFromIP);
+	pThis->pRcvFromIP = new;
+}
+
+
+/* set RcvFrom name in msg object WITHOUT calling AddRef.
+ * rgerhards, 2013-01-22
+ */
+void MsgSetRcvFromWithoutAddRef(msg_t *pThis, prop_t *new)
+{
+	assert(pThis != NULL);
+
+	if(pThis->msgFlags & NEEDS_DNSRESOL) {
+		if(pThis->rcvFrom.pfrominet != NULL)
+			free(pThis->rcvFrom.pfrominet);
+		pThis->msgFlags &= ~NEEDS_DNSRESOL;
+	} else {
+		if(pThis->rcvFrom.pRcvFrom != NULL)
+			prop.Destruct(&pThis->rcvFrom.pRcvFrom);
+	}
+	pThis->rcvFrom.pRcvFrom = new;
+}
+
+
 /* rgerhards 2012-04-18: set associated ruleset (by ruleset name)
  * If ruleset cannot be found, no update is done.
  */
@@ -342,19 +391,18 @@ static inline rsRetVal
 resolveDNS(msg_t *pMsg) {
 	rsRetVal localRet;
 	prop_t *propFromHost = NULL;
-	prop_t *propFromHostIP = NULL;
-	uchar fromHost[NI_MAXHOST];
-	uchar fromHostIP[NI_MAXHOST];
-	uchar fromHostFQDN[NI_MAXHOST];
+	prop_t *ip;
+	prop_t *localName;
 	DEFiRet;
 
 	MsgLock(pMsg);
 	CHKiRet(objUse(net, CORE_COMPONENT));
 	if(pMsg->msgFlags & NEEDS_DNSRESOL) {
-		localRet = net.cvthname(pMsg->rcvFrom.pfrominet, fromHost, fromHostFQDN, fromHostIP);
+		localRet = net.cvthname(pMsg->rcvFrom.pfrominet, &localName, NULL, &ip);
 		if(localRet == RS_RET_OK) {
-			MsgSetRcvFromStr(pMsg, fromHost, ustrlen(fromHost), &propFromHost);
-			CHKiRet(MsgSetRcvFromIPStr(pMsg, fromHostIP, ustrlen(fromHostIP), &propFromHostIP));
+			/* we pass down the props, so no need for AddRef */
+			MsgSetRcvFromWithoutAddRef(pMsg, localName);
+			MsgSetRcvFromIPWithoutAddRef(pMsg, ip);
 		}
 	}
 finalize_it:
@@ -366,8 +414,6 @@ finalize_it:
 	MsgUnlock(pMsg);
 	if(propFromHost != NULL)
 		prop.Destruct(&propFromHost);
-	if(propFromHostIP != NULL)
-		prop.Destruct(&propFromHostIP);
 	RETiRet;
 }
 
@@ -634,6 +680,7 @@ static inline rsRetVal msgBaseConstruct(msg_t **ppThis)
 	pM->iRefCount = 1;
 	pM->iSeverity = -1;
 	pM->iFacility = -1;
+	pM->iLenPROGNAME = -1;
 	pM->offAfterPRI = 0;
 	pM->offMSG = -1;
 	pM->iProtocolVersion = 0;
@@ -652,7 +699,6 @@ static inline rsRetVal msgBaseConstruct(msg_t **ppThis)
 	pM->pszTIMESTAMP3339 = NULL;
 	pM->pszTIMESTAMP_MySQL = NULL;
         pM->pszTIMESTAMP_PgSQL = NULL;
-	pM->pCSProgName = NULL;
 	pM->pCSStrucData = NULL;
 	pM->pCSAPPNAME = NULL;
 	pM->pCSPROCID = NULL;
@@ -795,8 +841,8 @@ CODESTARTobjDestruct(msg)
 		free(pThis->pszRcvdAt_PgSQL);
 		free(pThis->pszTIMESTAMP_MySQL);
 		free(pThis->pszTIMESTAMP_PgSQL);
-		if(pThis->pCSProgName != NULL)
-			rsCStrDestruct(&pThis->pCSProgName);
+		if(pThis->iLenPROGNAME >= CONF_PROGNAME_BUFSIZE)
+			free(pThis->PROGNAME.ptr);
 		if(pThis->pCSStrucData != NULL)
 			rsCStrDestruct(&pThis->pCSStrucData);
 		if(pThis->pCSAPPNAME != NULL)
@@ -949,7 +995,6 @@ msg_t* MsgDup(msg_t* pOld)
 		}
 	}
 
-	tmpCOPYCSTR(ProgName);
 	tmpCOPYCSTR(StrucData);
 	tmpCOPYCSTR(APPNAME);
 	tmpCOPYCSTR(PROCID);
@@ -1297,32 +1342,33 @@ finalize_it:
  * The above definition has been taken from the FreeBSD syslogd sources.
  * 
  * The program name is not parsed by default, because it is infrequently-used.
- * If it is needed, this function should be called first. It checks if it is
- * already set and extracts it, if not.
- *
  * IMPORTANT: A locked message object must be provided, else a crash will occur.
  * rgerhards, 2005-10-19
  */
-static rsRetVal aquireProgramName(msg_t *pM)
+static inline rsRetVal
+aquireProgramName(msg_t *pM)
 {
-	register int i;
-	uchar *pszTag;
+	int i;
+	uchar *pszTag, *pszProgName;
 	DEFiRet;
 
 	assert(pM != NULL);
-	if(pM->pCSProgName == NULL) {
-		/* ok, we do not yet have it. So let's parse the TAG to obtain it.  */
-		pszTag = (uchar*) ((pM->iLenTAG < CONF_TAG_BUFSIZE) ? pM->TAG.szBuf : pM->TAG.pszTAG);
-		CHKiRet(cstrConstruct(&pM->pCSProgName));
-		for(  i = 0
-		    ; (i < pM->iLenTAG) && isprint((int) pszTag[i])
-		      && (pszTag[i] != '\0') && (pszTag[i] != ':')
-		      && (pszTag[i] != '[')  && (pszTag[i] != '/')
-		    ; ++i) {
-			CHKiRet(cstrAppendChar(pM->pCSProgName, pszTag[i]));
-		}
-		CHKiRet(cstrFinalize(pM->pCSProgName));
+	pszTag = (uchar*) ((pM->iLenTAG < CONF_TAG_BUFSIZE) ? pM->TAG.szBuf : pM->TAG.pszTAG);
+	for(  i = 0
+	    ; (i < pM->iLenTAG) && isprint((int) pszTag[i])
+	      && (pszTag[i] != '\0') && (pszTag[i] != ':')
+	      && (pszTag[i] != '[')  && (pszTag[i] != '/')
+	    ; ++i)
+		; /* just search end of PROGNAME */
+	if(i < CONF_PROGNAME_BUFSIZE) {
+		pszProgName = pM->PROGNAME.szBuf;
+	} else {
+		CHKmalloc(pM->PROGNAME.ptr = malloc(i+1));
+		pszProgName = pM->PROGNAME.ptr;
 	}
+	memcpy((char*)pszProgName, (char*)pszTag, i);
+	pszProgName[i] = '\0';
+	pM->iLenPROGNAME = i;
 finalize_it:
 	RETiRet;
 }
@@ -1421,6 +1467,14 @@ getRawMsg(msg_t *pM, uchar **pBuf, int *piLen)
 	}
 }
 
+
+/* note: setMSGLen() is only for friends who really know what they
+ * do. Setting an invalid length can be desasterous!
+ */
+void setMSGLen(msg_t *pM, int lenMsg)
+{
+	pM->iLenMSG = lenMsg;
+}
 
 int getMSGLen(msg_t *pM)
 {
@@ -2059,53 +2113,24 @@ static inline char *getStructuredData(msg_t *pM)
 	return (char*) pszRet;
 }
 
-/* check if we have a ProgramName, and, if not, try to aquire/emulate it.
- * rgerhards, 2009-06-26
- */
-static inline void prepareProgramName(msg_t *pM, sbool bLockMutex)
-{
-	if(pM->pCSProgName == NULL) {
-		if(bLockMutex == LOCK_MUTEX)
-			MsgLock(pM);
-
-		/* re-query as things might have changed during locking */
-		if(pM->pCSProgName == NULL)
-			aquireProgramName(pM);
-
-		if(bLockMutex == LOCK_MUTEX)
-			MsgUnlock(pM);
-	}
-}
-
-
-/* get the length of the "programname" sz string
- * rgerhards, 2005-10-19
- */
-int getProgramNameLen(msg_t *pM, sbool bLockMutex)
-{
-	assert(pM != NULL);
-	prepareProgramName(pM, bLockMutex);
-	return (pM->pCSProgName == NULL) ? 0 : rsCStrLen(pM->pCSProgName);
-}
-
-
 /* get the "programname" as sz string
  * rgerhards, 2005-10-19
  */
 uchar *getProgramName(msg_t *pM, sbool bLockMutex)
 {
-	uchar *pszRet;
-
-	if(bLockMutex == LOCK_MUTEX)
-		MsgLock(pM);
-	prepareProgramName(pM, MUTEX_ALREADY_LOCKED);
-	if(pM->pCSProgName == NULL)
-		pszRet = UCHAR_CONSTANT("");
-	else 
-		pszRet = rsCStrGetSzStrNoNULL(pM->pCSProgName);
-	if(bLockMutex == LOCK_MUTEX)
-		MsgUnlock(pM);
-	return pszRet;
+	if(pM->iLenPROGNAME == -1) {
+		if(bLockMutex == LOCK_MUTEX) {
+			MsgLock(pM);
+			/* need to re-check, things may have change in between! */
+			if(pM->iLenPROGNAME == -1)
+				aquireProgramName(pM);
+			MsgUnlock(pM);
+		} else {
+			aquireProgramName(pM);
+		}
+	}
+	return (pM->iLenPROGNAME < CONF_PROGNAME_BUFSIZE) ? pM->PROGNAME.szBuf
+						       : pM->PROGNAME.ptr;
 }
 
 
@@ -2220,18 +2245,8 @@ finalize_it:
  */
 void MsgSetRcvFrom(msg_t *pThis, prop_t *new)
 {
-	assert(pThis != NULL);
-
 	prop.AddRef(new);
-	if(pThis->msgFlags & NEEDS_DNSRESOL) {
-		if(pThis->rcvFrom.pfrominet != NULL)
-		free(pThis->rcvFrom.pfrominet);
-		pThis->msgFlags &= ~NEEDS_DNSRESOL;
-	} else {
-		if(pThis->rcvFrom.pRcvFrom != NULL)
-			prop.Destruct(&pThis->rcvFrom.pRcvFrom);
-	}
-	pThis->rcvFrom.pRcvFrom = new;
+	MsgSetRcvFromWithoutAddRef(pThis, new);
 }
 
 
@@ -2264,9 +2279,7 @@ rsRetVal MsgSetRcvFromIP(msg_t *pThis, prop_t *new)
 
 	BEGINfunc
 	prop.AddRef(new);
-	if(pThis->pRcvFromIP != NULL)
-		prop.Destruct(&pThis->pRcvFromIP);
-	pThis->pRcvFromIP = new;
+	MsgSetRcvFromIPWithoutAddRef(pThis, new);
 	ENDfunc
 	return RS_RET_OK;
 }
@@ -2420,21 +2433,20 @@ void MsgSetRawMsgWOSize(msg_t *pMsg, char* pszRawMsg)
 
 
 /* Decode a priority into textual information like auth.emerg.
- * The variable pRes must point to a user-supplied buffer and
- * pResLen must contain its size. The pointer to the buffer
+ * The variable pRes must point to a user-supplied buffer.
+ * The pointer to the buffer
  * is also returned, what makes this functiona suitable for
  * use in printf-like functions.
  * Note: a buffer size of 20 characters is always sufficient.
- * Interface to this function changed 2007-06-15 by RGerhards
  */
-char *textpri(char *pRes, size_t pResLen, int pri)
+char *textpri(char *pRes, int pri)
 {
 	assert(pRes != NULL);
-	assert(pResLen > 0);
-
-	snprintf(pRes, pResLen, "%s.%s", syslog_fac_names[LOG_FAC(pri)],
-		 syslog_severity_names[LOG_PRI(pri)]);
-
+	memcpy(pRes, syslog_fac_names[LOG_FAC(pri)], len_syslog_fac_names[LOG_FAC(pri)]);
+	pRes[len_syslog_fac_names[LOG_FAC(pri)]] = '.';
+	memcpy(pRes+len_syslog_fac_names[LOG_FAC(pri)]+1,
+	       syslog_severity_names[LOG_PRI(pri)],
+	       len_syslog_severity_names[LOG_PRI(pri)]+1 /* for \0! */);
 	return pRes;
 }
 
@@ -2462,28 +2474,34 @@ static uchar *getNOW(eNOWType eNow, struct syslogTime *t)
 
 	switch(eNow) {
 	case NOW_NOW:
-		snprintf((char*) pBuf, tmpBUFSIZE, "%4.4d-%2.2d-%2.2d", t->year, t->month, t->day);
+		memcpy(pBuf, two_digits[t->year/100], 2);
+		memcpy(pBuf+2, two_digits[t->year%100], 2);
+		pBuf[4] = '-';
+		memcpy(pBuf+5, two_digits[(int)t->month], 2);
+		pBuf[7] = '-';
+		memcpy(pBuf+8, two_digits[(int)t->day], 3);
 		break;
 	case NOW_YEAR:
-		snprintf((char*) pBuf, tmpBUFSIZE, "%4.4d", t->year);
+		memcpy(pBuf, two_digits[t->year/100], 2);
+		memcpy(pBuf+2, two_digits[t->year%100], 3);
 		break;
 	case NOW_MONTH:
-		snprintf((char*) pBuf, tmpBUFSIZE, "%2.2d", t->month);
+		memcpy(pBuf, two_digits[(int)t->month], 3);
 		break;
 	case NOW_DAY:
-		snprintf((char*) pBuf, tmpBUFSIZE, "%2.2d", t->day);
+		memcpy(pBuf, two_digits[(int)t->day], 3);
 		break;
 	case NOW_HOUR:
-		snprintf((char*) pBuf, tmpBUFSIZE, "%2.2d", t->hour);
+		memcpy(pBuf, two_digits[(int)t->hour], 3);
 		break;
 	case NOW_HHOUR:
-		snprintf((char*) pBuf, tmpBUFSIZE, "%2.2d", t->minute / 30);
+		memcpy(pBuf, two_digits[t->hour/30], 3);
 		break;
 	case NOW_QHOUR:
-		snprintf((char*) pBuf, tmpBUFSIZE, "%2.2d", t->minute / 15);
+		memcpy(pBuf, two_digits[t->hour/15], 3);
 		break;
 	case NOW_MINUTE:
-		snprintf((char*) pBuf, tmpBUFSIZE, "%2.2d", t->minute);
+		memcpy(pBuf, two_digits[(int)t->minute], 3);
 		break;
 	}
 
@@ -2829,7 +2847,7 @@ uchar *MsgGetProp(msg_t *pMsg, struct templateEntry *pTpe,
 				RET_OUT_OF_MEMORY;
 			} else {
 				*pbMustBeFreed = 1;
-				pRes = (uchar*)textpri((char*)pBuf, 20, getPRIi(pMsg));
+				pRes = (uchar*)textpri((char*)pBuf, getPRIi(pMsg));
 			}
 			break;
 		case PROP_IUT:
@@ -3212,13 +3230,18 @@ uchar *MsgGetProp(msg_t *pMsg, struct templateEntry *pTpe,
 		uchar *pSb;
 		iFrom = pTpe->data.field.iFromPos;
 		iTo = pTpe->data.field.iToPos;
-		/* need to zero-base to and from (they are 1-based!) */
-		if(iFrom > 0)
-			--iFrom;
-		if(iTo > 0)
-			--iTo;
 		if(bufLen == -1)
 			bufLen = ustrlen(pRes);
+		if(pTpe->data.field.options.bFromPosEndRelative) {
+			iFrom = (bufLen < iFrom) ? 0 : bufLen - iFrom;
+			iTo = (bufLen < iTo)? 0 : bufLen - iTo;
+		} else {
+			/* need to zero-base to and from (they are 1-based!) */
+			if(iFrom > 0)
+				--iFrom;
+			if(iTo > 0)
+				--iTo;
+		}
 		if(iFrom == 0 && iTo >=  bufLen) { 
 			/* in this case, the requested string is a superset of what we already have,
 			 * so there is no need to do any processing. This is a frequent case for size-limited

@@ -303,7 +303,7 @@ static inline void dbgFuncDBRemoveMutexLock(dbgFuncDB_t *pFuncDB, pthread_mutex_
 void
 dbgOutputTID(char* name)
 {
-#	ifdef	HAVE_SYSCALL
+#	if defined(HAVE_SYSCALL) && defined(HAVE_SYS_gettid)
 	if(bOutputTidToStderr)
 		fprintf(stderr, "thread tid %u, name '%s'\n",
 			(unsigned)syscall(SYS_gettid), name);
@@ -1315,6 +1315,15 @@ dbgmalloc(size_t size)
 }
 
 
+/* report fd used for debug log. This is needed in case of
+ * auto-backgrounding, where the debug log shall not be closed.
+ */
+int
+dbgGetDbglogFd(void)
+{
+	return altdbg;
+}
+
 /* read in the runtime options
  * rgerhards, 2008-02-28
  */
@@ -1398,10 +1407,30 @@ dbgGetRuntimeOptions(void)
 }
 
 
+void
+dbgSetDebugLevel(int level)
+{
+	Debug = level;
+	debugging_on = (level == DEBUG_FULL) ? 1 : 0;
+}
+
+void
+dbgSetDebugFile(uchar *fn)
+{
+	if(altdbg != -1) {
+		dbgprintf("switching to debug file %s\n", fn);
+		close(altdbg);
+	}
+	if((altdbg = open((char*)fn, O_WRONLY|O_CREAT|O_TRUNC|O_NOCTTY|O_CLOEXEC, S_IRUSR|S_IWUSR)) == -1) {
+		fprintf(stderr, "alternate debug file could not be opened, ignoring. Error: %s\n", strerror(errno));
+	}
+}
+
 /* end support system to set debug options at runtime */
 
 rsRetVal dbgClassInit(void)
 {
+	pthread_mutexattr_t mutAttr;
 	rsRetVal iRet;	/* do not use DEFiRet, as this makes calls into the debug system! */
 
 	struct sigaction sigAct;
@@ -1409,14 +1438,16 @@ rsRetVal dbgClassInit(void)
 	
 	(void) pthread_key_create(&keyCallStack, dbgCallStackDestruct); /* MUST be the first action done! */
 
-	/* we initialize all Mutexes with code, as some platforms seem to have
-	 * bugs in the static initializer macros. So better be on the safe side...
-	 * rgerhards, 2008-03-06
+	/* the mutexes must be recursive, because it may be called from within
+	 * signal handlers, which can lead to a hang if the signal interrupted dbgprintf
+	 * (yes, we have really seen that situation in practice!). -- rgerhards, 2013-05-17
 	 */
-	pthread_mutex_init(&mutFuncDBList, NULL);
-	pthread_mutex_init(&mutMutLog, NULL);
-	pthread_mutex_init(&mutCallStack, NULL);
-	pthread_mutex_init(&mutdbgprint, NULL);
+	pthread_mutexattr_init(&mutAttr);
+	pthread_mutexattr_settype(&mutAttr, PTHREAD_MUTEX_RECURSIVE);
+	pthread_mutex_init(&mutFuncDBList, &mutAttr);
+	pthread_mutex_init(&mutMutLog, &mutAttr);
+	pthread_mutex_init(&mutCallStack, &mutAttr);
+	pthread_mutex_init(&mutdbgprint, &mutAttr);
 
 	/* while we try not to use any of the real rsyslog code (to avoid infinite loops), we
 	 * need to have the ability to query object names. Thus, we need to obtain a pointer to

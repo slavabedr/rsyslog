@@ -130,7 +130,7 @@ static inline void displayBatchState(batch_t *pBatch)
 {
 	int i;
 	for(i = 0 ; i < pBatch->nElem ; ++i) {
-		DBGPRINTF("displayBatchState %p[%d]: %d\n", pBatch, i, pBatch->pElem[i].state);
+		DBGPRINTF("displayBatchState %p[%d]: %d\n", pBatch, i, pBatch->eltState[i]);
 	}
 }
 
@@ -941,6 +941,7 @@ static rsRetVal qAddDirect(qqueue_t *pThis, msg_t* pMsg)
 {
 	batch_t singleBatch;
 	batch_obj_t batchObj;
+	batch_state_t batchState = BATCH_STATE_RDY;
 	sbool active = 1;
 	int i;
 	DEFiRet;
@@ -958,10 +959,10 @@ static rsRetVal qAddDirect(qqueue_t *pThis, msg_t* pMsg)
 	 */
 	memset(&batchObj, 0, sizeof(batch_obj_t));
 	memset(&singleBatch, 0, sizeof(batch_t));
-	batchObj.state = BATCH_STATE_RDY;
 	batchObj.pMsg = pMsg;
 	singleBatch.nElem = 1; /* there always is only one in direct mode */
 	singleBatch.pElem = &batchObj;
+	singleBatch.eltState = &batchState;
 	singleBatch.active = &active;
 	iRet = pThis->pConsumer(pThis->pAction, &singleBatch, &pThis->bShutdownImmediate);
 	/* delete the batch string params: TODO: create its own "class" for this */
@@ -990,7 +991,7 @@ rsRetVal qqueueEnqObjDirectBatch(qqueue_t *pThis, batch_t *pBatch)
 	 * We use our knowledge about the batch_t structure below, but without that, we
 	 * pay a too-large performance toll... -- rgerhards, 2009-04-22
 	 */
-	iRet = pThis->pConsumer(pThis->pAction, pBatch, &pThis->bShutdownImmediate);
+	iRet = pThis->pConsumer(pThis->pAction, pBatch, NULL);
 
 	RETiRet;
 }
@@ -1290,8 +1291,6 @@ finalize_it:
 	RETiRet;
 }
 
-
-
 /* Constructor for the queue object
  * This constructs the data structure, but does not yet start the queue. That
  * is done by queueStart(). The reason is that we want to give the caller a chance
@@ -1355,7 +1354,7 @@ qqueueSetDefaultsActionQueue(qqueue_t *pThis)
 	pThis->iDeqBatchSize = 128; 		/* default batch size */
 	pThis->iHighWtrMrk = 800;		/* high water mark for disk-assisted queues */
 	pThis->iLowWtrMrk = 200;		/* low water mark for disk-assisted queues */
-	pThis->iDiscardMrk = 9800;		/* begin to discard messages */
+	pThis->iDiscardMrk = 980;		/* begin to discard messages */
 	pThis->iDiscardSeverity = 8;		/* turn off */
 	pThis->iNumWorkerThreads = 1;		/* number of worker threads for the mm queue above */
 	pThis->iMaxFileSize = 1024*1024;
@@ -1546,8 +1545,8 @@ DeleteProcessedBatch(qqueue_t *pThis, batch_t *pBatch)
 
 	for(i = 0 ; i < pBatch->nElem ; ++i) {
 		pMsg = pBatch->pElem[i].pMsg;
-		if(   pBatch->pElem[i].state == BATCH_STATE_RDY
-		   || pBatch->pElem[i].state == BATCH_STATE_SUB) {
+		if(   pBatch->eltState[i] == BATCH_STATE_RDY
+		   || pBatch->eltState[i] == BATCH_STATE_SUB) {
 			localRet = doEnqSingleObj(pThis, eFLOWCTL_NO_DELAY, MsgAddRef(pMsg));
 			++nEnqueued;
 			if(localRet != RS_RET_OK) {
@@ -1611,7 +1610,7 @@ DequeueConsumableElements(qqueue_t *pThis, wti_t *pWti, int *piRemainingQueueSiz
 
 		/* all well, use this element */
 		pWti->batch.pElem[nDequeued].pMsg = pMsg;
-		pWti->batch.pElem[nDequeued].state = BATCH_STATE_RDY;
+		pWti->batch.eltState[nDequeued] = BATCH_STATE_RDY;
 		++nDequeued;
 	}
 
@@ -1855,6 +1854,7 @@ ConsumerReg(qqueue_t *pThis, wti_t *pWti)
 	/* at this spot, we may be cancelled */
 	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &iCancelStateSave);
 
+
 	CHKiRet(pThis->pConsumer(pThis->pAction, &pWti->batch, &pThis->bShutdownImmediate));
 
 	/* we now need to check if we should deliberately delay processing a bit
@@ -1915,7 +1915,7 @@ ConsumerDA(qqueue_t *pThis, wti_t *pWti)
 	for(i = 0 ; i < pWti->batch.nElem && !pThis->bShutdownImmediate ; i++) {
 		CHKiRet(qqueueEnqMsg(pThis->pqDA, eFLOWCTL_NO_DELAY,
 			MsgAddRef(pWti->batch.pElem[i].pMsg)));
-		pWti->batch.pElem[i].state = BATCH_STATE_COMM; /* commited to other queue! */
+		pWti->batch.eltState[i] = BATCH_STATE_COMM; /* commited to other queue! */
 	}
 
 	/* but now cancellation is no longer permitted */
@@ -2759,6 +2759,12 @@ qqueueApplyCnfParam(qqueue_t *pThis, struct cnfparamvals *pvals)
 			DBGPRINTF("queue: program error, non-handled "
 			  "param '%s'\n", pblk.descr[i].name);
 		}
+	}
+	if(pThis->qType == QUEUETYPE_DISK && pThis->pszFilePrefix == NULL) {
+		errmsg.LogError(0, RS_RET_QUEUE_DISK_NO_FN, "error on queue '%s', disk mode selected, but "
+			        "no queue file name given; queue type changed to 'linkedList'",
+				obj.GetName((obj_t*) pThis));
+		pThis->qType = QUEUETYPE_LINKEDLIST;
 	}
 	cnfparamvalsDestruct(pvals, &pblk);
 	return RS_RET_OK;

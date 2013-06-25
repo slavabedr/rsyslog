@@ -51,7 +51,6 @@
 #include <stddef.h>
 #include <ctype.h>
 #include <limits.h>
-#define GNU_SOURCE
 #include <string.h>
 #include <stdarg.h>
 #include <time.h>
@@ -195,7 +194,6 @@ static prop_t *pInternalInputName = NULL;	/* there is only one global inputName 
 static uchar	*ConfFile = (uchar*) _PATH_LOGCONF; /* read-only after startup */
 static char	*PidFile = _PATH_LOGPID; /* read-only after startup */
 
-static pid_t myPid;	/* our pid for use in self-generated messages, e.g. on startup */
 /* mypid is read-only after the initial fork() */
 static int bHadHUP = 0; /* did we have a HUP? */
 
@@ -219,7 +217,7 @@ static ratelimit_t *dflt_ratelimiter = NULL; /* ratelimiter for submits without 
 static ratelimit_t *internalMsg_ratelimiter = NULL; /* ratelimiter for rsyslog-own messages */
 int	MarkInterval = 20 * 60;	/* interval between marks in seconds - read-only after startup */
 int      send_to_all = 0;        /* send message to all IPv4/IPv6 addresses */
-static int	NoFork = 0; 	/* don't fork - don't run in daemon mode - read-only after startup */
+static int	doFork = 1; 	/* fork - run in daemon mode - read-only after startup */
 int	bHaveMainQueue = 0;/* set to 1 if the main queue - in queueing mode - is available
 				 * If the main queue is either not yet ready or not running in 
 				 * queueing mode (mode DIRECT!), then this is set to 0.
@@ -474,7 +472,7 @@ logmsgInternal(int iErr, int pri, uchar *msg, int flags)
 	 * permits us to process unmodified config files which otherwise contain a
 	 * supressor statement.
 	 */
-	if(((Debug == DEBUG_FULL || NoFork) && ourConf->globals.bErrMsgToStderr) || iConfigVerify) {
+	if(((Debug == DEBUG_FULL || !doFork) && ourConf->globals.bErrMsgToStderr) || iConfigVerify) {
 		if(LOG_PRI(pri) == LOG_ERR)
 			fprintf(stderr, "rsyslogd: %s\n", msg);
 	}
@@ -500,9 +498,9 @@ finalize_it:
  */
 static inline rsRetVal
 preprocessBatch(batch_t *pBatch) {
-	uchar fromHost[NI_MAXHOST];
-	uchar fromHostIP[NI_MAXHOST];
-	uchar fromHostFQDN[NI_MAXHOST];
+	prop_t *ip;
+	prop_t *fqdn;
+	prop_t *localName;
 	prop_t *propFromHost = NULL;
 	prop_t *propFromHostIP = NULL;
 	int bSingleRuleset;
@@ -520,25 +518,25 @@ preprocessBatch(batch_t *pBatch) {
 		pMsg = pBatch->pElem[i].pMsg;
 		if((pMsg->msgFlags & NEEDS_ACLCHK_U) != 0) {
 			DBGPRINTF("msgConsumer: UDP ACL must be checked for message (hostname-based)\n");
-			if(net.cvthname(pMsg->rcvFrom.pfrominet, fromHost, fromHostFQDN, fromHostIP) != RS_RET_OK)
+			if(net.cvthname(pMsg->rcvFrom.pfrominet, &localName, &fqdn, &ip) != RS_RET_OK)
 				continue;
 			bIsPermitted = net.isAllowedSender2((uchar*)"UDP",
-			    (struct sockaddr *)pMsg->rcvFrom.pfrominet, (char*)fromHostFQDN, 1);
+			    (struct sockaddr *)pMsg->rcvFrom.pfrominet, (char*)propGetSzStr(fqdn), 1);
 			if(!bIsPermitted) {
 				DBGPRINTF("Message from '%s' discarded, not a permitted sender host\n",
-					  fromHostFQDN);
-				pBatch->pElem[i].state = BATCH_STATE_DISC;
+					  propGetSzStr(fqdn));
+				pBatch->eltState[i] = BATCH_STATE_DISC;
 			} else {
 				/* save some of the info we obtained */
-				MsgSetRcvFromStr(pMsg, fromHost, ustrlen(fromHost), &propFromHost);
-				CHKiRet(MsgSetRcvFromIPStr(pMsg, fromHostIP, ustrlen(fromHostIP), &propFromHostIP));
+				MsgSetRcvFrom(pMsg, localName);
+				CHKiRet(MsgSetRcvFromIP(pMsg, ip));
 				pMsg->msgFlags &= ~NEEDS_ACLCHK_U;
 			}
 		}
 		if((pMsg->msgFlags & NEEDS_PARSING) != 0) {
 			if((localRet = parser.ParseMsg(pMsg)) != RS_RET_OK)  {
 				DBGPRINTF("Message discarded, parsing error %d\n", localRet);
-				pBatch->pElem[i].state = BATCH_STATE_DISC;
+				pBatch->eltState[i] = BATCH_STATE_DISC;
 			}
 		}
 		if(pMsg->pRuleset != batchRuleset)
@@ -573,7 +571,7 @@ msgConsumer(void __attribute__((unused)) *notNeeded, batch_t *pBatch, int *pbShu
 //do not have this yet and so we emulate -- 2010-06-10
 int i;
 	for(i = 0 ; i < pBatch->nElem  && !*pbShutdownImmediate ; i++) {
-		pBatch->pElem[i].state = BATCH_STATE_COMM;
+		pBatch->eltState[i] = BATCH_STATE_COMM;
 	}
 	RETiRet;
 }
@@ -795,7 +793,7 @@ die(int sig)
 		(void) snprintf(buf, sizeof(buf) / sizeof(char),
 		 " [origin software=\"rsyslogd\" " "swVersion=\"" VERSION \
 		 "\" x-pid=\"%d\" x-info=\"http://www.rsyslog.com\"]" " exiting on signal %d.",
-		 (int) myPid, sig);
+		 (int) glblGetOurPid(), sig);
 		errno = 0;
 		logmsgInternal(NO_ERRCODE, LOG_SYSLOG|LOG_INFO, (uchar*)buf, 0);
 	}
@@ -1169,7 +1167,7 @@ init(void)
                snprintf(bufStartUpMsg, sizeof(bufStartUpMsg)/sizeof(char),
 			 " [origin software=\"rsyslogd\" " "swVersion=\"" VERSION \
 			 "\" x-pid=\"%d\" x-info=\"http://www.rsyslog.com\"] start",
-			 (int) myPid);
+			 (int) glblGetOurPid());
 		logmsgInternal(NO_ERRCODE, LOG_SYSLOG|LOG_INFO, (uchar*)bufStartUpMsg, 0);
 	}
 
@@ -1248,7 +1246,7 @@ doHUP(void)
 		snprintf(buf, sizeof(buf) / sizeof(char),
 			 " [origin software=\"rsyslogd\" " "swVersion=\"" VERSION
 			 "\" x-pid=\"%d\" x-info=\"http://www.rsyslog.com\"] rsyslogd was HUPed",
-			 (int) myPid);
+			 (int) glblGetOurPid());
 			errno = 0;
 		logmsgInternal(NO_ERRCODE, LOG_SYSLOG|LOG_INFO, (uchar*)buf, 0);
 	}
@@ -1529,6 +1527,13 @@ queryLocalHostname(void)
 	 */
 	glbl.SetLocalHostName(LocalHostName);
 	glbl.SetLocalDomain(LocalDomain);
+
+	if ( strlen((char*)LocalDomain) )  {
+		CHKmalloc(LocalFQDNName = (uchar*)malloc(strlen((char*)LocalDomain)+strlen((char*)LocalHostName)+2));/* one for dot, one for NUL! */
+		if ( sprintf((char*)LocalFQDNName,"%s.%s",(char*)LocalHostName,(char*)LocalDomain) )
+			glbl.SetLocalFQDNName(LocalFQDNName);
+		}
+
 	glbl.GenerateLocalHostNameProperty(); /* must be redone after conf processing, FQDN setting may have changed */
 finalize_it:
 	RETiRet;
@@ -1615,8 +1620,7 @@ doGlblProcessInit(void)
 
 	thrdInit();
 
-	if( !(Debug == DEBUG_FULL || NoFork) )
-	{
+	if(doFork) {
 		DBGPRINTF("Checking pidfile '%s'.\n", PidFile);
 		if (!check_pid(PidFile))
 		{
@@ -1628,16 +1632,23 @@ doGlblProcessInit(void)
 			/* stop writing debug messages to stdout (if debugging is on) */
 			stddbg = -1;
 
+			dbgprintf("ready for forking\n");
 			if (fork()) {
 				/* Parent process
 				 */
-				sleep(300);
-				/* Not reached unless something major went wrong.  5
-				 * minutes should be a fair amount of time to wait.
-				 * Please note that this procedure is important since
-				 * the father must not exit before syslogd isn't
-				 * initialized or the klogd won't be able to flush its
-				 * logs.  -Joey
+				dbgprintf("parent process going to sleep for 60 secs\n");
+				sleep(60);
+				/* Not reached unless something major went wrong.  1
+				 * minute should be a fair amount of time to wait.
+				 * The parent should not exit before rsyslogd is 
+				 * properly initilized (at least almost) or the init
+				 * system may get a wrong impression of our readyness.
+				 * Note that we exit before being completely initialized,
+				 * but at this point it is very, very unlikely that something
+				 * bad can happen. We do this here, because otherwise we would
+				 * need to have much more code to handle priv drop (which we
+				 * don't consider worth for the init system, especially as it
+				 * is going away on the majority of distros).
 				 */
 				exit(1); /* "good" exit - after forking, not diasabling anything */
 			}
@@ -1646,6 +1657,7 @@ doGlblProcessInit(void)
 			close(0);
 			/* we keep stdout and stderr open in case we have to emit something */
 			i = 3;
+			dbgprintf("in child, finalizing initialization\n");
 
 			/* if (sd_booted()) */ {
 				const char *e;
@@ -1679,7 +1691,8 @@ doGlblProcessInit(void)
 					i = SD_LISTEN_FDS_START + sd_fds;
 			}
 			for ( ; i < num_fds; i++)
-				(void) close(i);
+				if(i != dbgGetDbglogFd())
+					close(i);
 
 			untty();
 		} else {
@@ -1704,7 +1717,7 @@ doGlblProcessInit(void)
 		fputs("Pidfile (and pid) already exist.\n", stderr);
 		exit(1); /* exit during startup - questionable */
 	}
-	myPid = getpid(); 	/* save our pid for further testing (also used for messages) */
+	glblSetOurPid(getpid());
 
 	memset(&sigAct, 0, sizeof (sigAct));
 	sigemptyset(&sigAct.sa_mask);
@@ -1890,7 +1903,7 @@ int realMain(int argc, char **argv)
 			fprintf(stderr, "rsyslogd: error -m is no longer supported - use immark instead");
 			break;
 		case 'n':		/* don't fork */
-			NoFork = 1;
+			doFork = 0;
 			break;
 		case 'N':		/* enable config verify mode */
 			iConfigVerify = atoi(arg);
@@ -1994,16 +2007,15 @@ int realMain(int argc, char **argv)
 	if(!iConfigVerify)
 		CHKiRet(doGlblProcessInit());
 
+	/* Send a signal to the parent so it can terminate.  */
+	if(glblGetOurPid() != ppid)
+		kill(ppid, SIGTERM);
+
 	CHKiRet(init());
 
 	if(Debug && debugging_on) {
 		dbgprintf("Debugging enabled, SIGUSR1 to turn off debugging.\n");
 	}
-
-	/* Send a signal to the parent so it can terminate.  */
-	if(myPid != ppid)
-		kill(ppid, SIGTERM);
-
 
 	/* END OF INTIALIZATION */
 	DBGPRINTF("initialization completed, transitioning to regular run mode\n");
@@ -2015,11 +2027,13 @@ int realMain(int argc, char **argv)
 	 * is still in its infancy (and not really done), we currently accept this issue.
 	 * rgerhards, 2009-06-29
 	 */
-	if(!(Debug == DEBUG_FULL || NoFork)) {
+	if(doFork) {
 		close(1);
 		close(2);
 		ourConf->globals.bErrMsgToStderr = 0;
 	}
+
+	sd_notify(0, "READY=1");
 
 	mainloop();
 

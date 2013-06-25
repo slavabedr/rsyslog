@@ -35,8 +35,6 @@
 #include "syslogd-types.h"
 #include "template.h"
 #include "atomic.h"
-#include "libee/libee.h"
-
 
 /* rgerhards 2004-11-08: The following structure represents a
  * syslog message. 
@@ -76,6 +74,7 @@ struct msg {
 	int	iLenMSG;	/* Length of the MSG part */
 	int	iLenTAG;	/* Length of the TAG part */
 	int	iLenHOSTNAME;	/* Length of HOSTNAME */
+	int	iLenPROGNAME;	/* Length of PROGNAME (-1 = not yet set) */
 	uchar	*pszRawMsg;	/* message as it was received on the wire. This is important in case we
 				 * need to preserve cryptographic verifiers.  */
 	uchar	*pszHOSTNAME;	/* HOSTNAME from syslog message */
@@ -87,7 +86,6 @@ struct msg {
 	char *pszTIMESTAMP3339;	/* TIMESTAMP as RFC3339 formatted string (32 charcters at most) */
 	char *pszTIMESTAMP_MySQL;/* TIMESTAMP as MySQL formatted string (always 14 charcters) */
         char *pszTIMESTAMP_PgSQL;/* TIMESTAMP as PgSQL formatted string (always 21 characters) */
-	cstr_t *pCSProgName;	/* the (BSD) program name */
 	cstr_t *pCSStrucData;   /* STRUCTURED-DATA */
 	cstr_t *pCSAPPNAME;	/* APP-NAME */
 	cstr_t *pCSPROCID;	/* PROCID */
@@ -113,6 +111,10 @@ struct msg {
 	/* some fixed-size buffers to save malloc()/free() for frequently used fields (from the default templates) */
 	uchar szRawMsg[CONF_RAWMSG_BUFSIZE];	/* most messages are small, and these are stored here (without malloc/free!) */
 	uchar szHOSTNAME[CONF_HOSTNAME_BUFSIZE];
+	union {
+		uchar	*ptr;	/* pointer to progname value */
+		uchar	szBuf[CONF_PROGNAME_BUFSIZE];
+	} PROGNAME;
 	union {
 		uchar	*pszTAG;	/* pointer to tag value */
 		uchar	szBuf[CONF_TAG_BUFSIZE];
@@ -175,7 +177,6 @@ rsRetVal MsgReplaceMSG(msg_t *pThis, uchar* pszMSG, int lenMSG);
 uchar *MsgGetProp(msg_t *pMsg, struct templateEntry *pTpe,
                   propid_t propid, es_str_t *propName,
 		  rs_size_t *pPropLen, unsigned short *pbMustBeFreed, struct syslogTime *ttNow);
-char *textpri(char *pRes, size_t pResLen, int pri);
 rsRetVal msgGetMsgVar(msg_t *pThis, cstr_t *pstrPropName, var_t **ppVar);
 es_str_t* msgGetMsgVarNew(msg_t *pThis, uchar *name);
 uchar *getRcvFrom(msg_t *pM);
@@ -195,12 +196,12 @@ uchar *getMSG(msg_t *pM);
 char *getHOSTNAME(msg_t *pM);
 char *getPROCID(msg_t *pM, sbool bLockMutex);
 char *getAPPNAME(msg_t *pM, sbool bLockMutex);
+void setMSGLen(msg_t *pM, int lenMsg);
 int getMSGLen(msg_t *pM);
 
 char *getHOSTNAME(msg_t *pM);
 int getHOSTNAMELen(msg_t *pM);
 uchar *getProgramName(msg_t *pM, sbool bLockMutex);
-int getProgramNameLen(msg_t *pM, sbool bLockMutex);
 uchar *getRcvFrom(msg_t *pM);
 rsRetVal propNameToID(cstr_t *pCSPropName, propid_t *pPropID);
 uchar *propIDToName(propid_t propID);

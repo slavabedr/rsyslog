@@ -11,7 +11,7 @@
  *
  * Module begun 2009-06-10 by Rainer Gerhards
  *
- * Copyright 2009-2012 Rainer Gerhards and Adiscon GmbH.
+ * Copyright 2009-2013 Rainer Gerhards and Adiscon GmbH.
  *
  * This file is part of the rsyslog runtime library.
  *
@@ -181,7 +181,7 @@ processBatchMultiRuleset(batch_t *pBatch)
 	do {
 		bHaveUnprocessed = 0;
 		/* search for first unprocessed element */
-		for(iStart = 0 ; iStart < pBatch->nElem && pBatch->pElem[iStart].state == BATCH_STATE_DISC ; ++iStart)
+		for(iStart = 0 ; iStart < pBatch->nElem && pBatch->eltState[iStart] == BATCH_STATE_DISC ; ++iStart)
 			/* just search, no action */;
 		if(iStart == pBatch->nElem)
 			break; /* everything processed */
@@ -195,10 +195,10 @@ processBatchMultiRuleset(batch_t *pBatch)
 			if(batchElemGetRuleset(pBatch, i) == currRuleset) {
 				/* for performance reasons, we copy only those members that we actually need */
 				snglRuleBatch.pElem[iNew].pMsg = pBatch->pElem[i].pMsg;
-				snglRuleBatch.pElem[iNew].state = pBatch->pElem[i].state;
+				snglRuleBatch.eltState[iNew] = pBatch->eltState[i];
 				++iNew;
 				/* We indicate the element also as done, so it will not be processed again */
-				pBatch->pElem[i].state = BATCH_STATE_DISC;
+				pBatch->eltState[i] = BATCH_STATE_DISC;
 			} else {
 				bHaveUnprocessed = 1;
 			}
@@ -242,7 +242,7 @@ execSet(struct cnfstmt *stmt, batch_t *pBatch, sbool *active)
 	struct var result;
 	DEFiRet;
 	for(i = 0 ; i < batchNumMsgs(pBatch) && !*(pBatch->pbShutdownImmediate) ; ++i) {
-		if(   pBatch->pElem[i].state != BATCH_STATE_DISC
+		if(   pBatch->eltState[i] != BATCH_STATE_DISC
 		   && (active == NULL || active[i])) {
 			cnfexprEval(stmt->d.s_set.expr, &result, pBatch->pElem[i].pMsg);
 			msgSetJSONFromVar(pBatch->pElem[i].pMsg, stmt->d.s_set.varname,
@@ -259,7 +259,7 @@ execUnset(struct cnfstmt *stmt, batch_t *pBatch, sbool *active)
 	int i;
 	DEFiRet;
 	for(i = 0 ; i < batchNumMsgs(pBatch) && !*(pBatch->pbShutdownImmediate) ; ++i) {
-		if(   pBatch->pElem[i].state != BATCH_STATE_DISC
+		if(   pBatch->eltState[i] != BATCH_STATE_DISC
 		   && (active == NULL || active[i])) {
 			msgUnsetJSON(pBatch->pElem[i].pMsg, stmt->d.s_unset.varname);
 		}
@@ -277,9 +277,9 @@ execStop(batch_t *pBatch, sbool *active)
 	int i;
 	DEFiRet;
 	for(i = 0 ; i < batchNumMsgs(pBatch) && !*(pBatch->pbShutdownImmediate) ; ++i) {
-		if(   pBatch->pElem[i].state != BATCH_STATE_DISC
+		if(   pBatch->eltState[i] != BATCH_STATE_DISC
 		   && (active == NULL || active[i])) {
-			pBatch->pElem[i].state = BATCH_STATE_DISC;
+			pBatch->eltState[i] = BATCH_STATE_DISC;
 		}
 	}
 	RETiRet;
@@ -297,19 +297,27 @@ execIf(struct cnfstmt *stmt, batch_t *pBatch, sbool *active)
 	sbool *newAct;
 	int i;
 	sbool bRet;
+	sbool allInactive = 1;
 	DEFiRet;
 	newAct = newActive(pBatch);
 	for(i = 0 ; i < batchNumMsgs(pBatch) ; ++i) {
 		if(*(pBatch->pbShutdownImmediate))
 			FINALIZE;
-		if(pBatch->pElem[i].state == BATCH_STATE_DISC)
+		if(pBatch->eltState[i] == BATCH_STATE_DISC)
 			continue; /* will be ignored in any case */
 		if(active == NULL || active[i]) {
 			bRet = cnfexprEvalBool(stmt->d.s_if.expr, pBatch->pElem[i].pMsg);
+			allInactive = 0;
 		} else 
 			bRet = 0;
 		newAct[i] = bRet;
 		DBGPRINTF("batch: item %d: expr eval: %d\n", i, bRet);
+	}
+
+	if(allInactive) {
+		DBGPRINTF("execIf: all batch elements are inactive, holding execution\n");
+		freeActive(newAct);
+		FINALIZE;
 	}
 
 	if(stmt->d.s_if.t_then != NULL) {
@@ -319,7 +327,8 @@ execIf(struct cnfstmt *stmt, batch_t *pBatch, sbool *active)
 		for(i = 0 ; i < batchNumMsgs(pBatch) ; ++i) {
 			if(*(pBatch->pbShutdownImmediate))
 				FINALIZE;
-			if(pBatch->pElem[i].state != BATCH_STATE_DISC)
+			if(pBatch->eltState[i] != BATCH_STATE_DISC
+			   && (active == NULL || active[i]))
 				newAct[i] = !newAct[i];
 			}
 		scriptExec(stmt->d.s_if.t_else, pBatch, newAct);
@@ -341,7 +350,7 @@ execPRIFILT(struct cnfstmt *stmt, batch_t *pBatch, sbool *active)
 	for(i = 0 ; i < batchNumMsgs(pBatch) ; ++i) {
 		if(*(pBatch->pbShutdownImmediate))
 			return;
-		if(pBatch->pElem[i].state == BATCH_STATE_DISC)
+		if(pBatch->eltState[i] == BATCH_STATE_DISC)
 			continue; /* will be ignored in any case */
 		pMsg = pBatch->pElem[i].pMsg;
 		if(active == NULL || active[i]) {
@@ -364,7 +373,8 @@ execPRIFILT(struct cnfstmt *stmt, batch_t *pBatch, sbool *active)
 		for(i = 0 ; i < batchNumMsgs(pBatch) ; ++i) {
 			if(*(pBatch->pbShutdownImmediate))
 				return;
-			if(pBatch->pElem[i].state != BATCH_STATE_DISC)
+			if(pBatch->eltState[i] != BATCH_STATE_DISC
+			   && (active == NULL || active[i]))
 				newAct[i] = !newAct[i];
 			}
 		scriptExec(stmt->d.s_prifilt.t_else, pBatch, newAct);
@@ -401,12 +411,12 @@ evalPROPFILT(struct cnfstmt *stmt, msg_t *pMsg)
 		break;
 	case FIOP_ISEQUAL:
 		if(rsCStrSzStrCmp(stmt->d.s_propfilt.pCSCompValue,
-				  pszPropVal, ustrlen(pszPropVal)) == 0)
+				  pszPropVal, propLen) == 0)
 			bRet = 1; /* process message! */
 		break;
 	case FIOP_STARTSWITH:
 		if(rsCStrSzStrStartsWithCStr(stmt->d.s_propfilt.pCSCompValue,
-				  pszPropVal, ustrlen(pszPropVal)) == 0)
+				  pszPropVal, propLen) == 0)
 			bRet = 1; /* process message! */
 		break;
 	case FIOP_REGEX:
@@ -473,7 +483,7 @@ execPROPFILT(struct cnfstmt *stmt, batch_t *pBatch, sbool *active)
 	for(i = 0 ; i < batchNumMsgs(pBatch) ; ++i) {
 		if(*(pBatch->pbShutdownImmediate))
 			return;
-		if(pBatch->pElem[i].state == BATCH_STATE_DISC)
+		if(pBatch->eltState[i] == BATCH_STATE_DISC)
 			continue; /* will be ignored in any case */
 		if(active == NULL || active[i]) {
 			bRet = evalPROPFILT(stmt, pBatch->pElem[i].pMsg);
@@ -504,7 +514,11 @@ scriptExec(struct cnfstmt *root, batch_t *pBatch, sbool *active)
 	struct cnfstmt *stmt;
 
 	for(stmt = root ; stmt != NULL ; stmt = stmt->next) {
-dbgprintf("RRRR: scriptExec: batch of %d elements, active %p, stmt %p, nodetype %u\n", batchNumMsgs(pBatch), active, stmt, stmt->nodetype);
+		if(Debug) {
+			dbgprintf("scriptExec: batch of %d elements, active %p, active[0]:%d\n",
+				  batchNumMsgs(pBatch), active, (active == NULL ? 1 : active[0]));
+			cnfstmtPrintOnly(stmt, 2, 0);
+		}
 		switch(stmt->nodetype) {
 		case S_NOP:
 			break;
@@ -521,7 +535,6 @@ dbgprintf("RRRR: scriptExec: batch of %d elements, active %p, stmt %p, nodetype 
 			execUnset(stmt, pBatch, active);
 			break;
 		case S_CALL:
-			DBGPRINTF("calling ruleset\n"); // TODO: add Name
 			scriptExec(stmt->d.s_call.stmt, pBatch, active);
 			break;
 		case S_IF:

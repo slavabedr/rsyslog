@@ -34,20 +34,18 @@
  * main message queue. But over time, it could potentially be useful to split the two.
  * rgerhad, 2009-05-12
  */
-typedef enum {
-	BATCH_STATE_RDY  = 0,	/* object ready for processing */
-	BATCH_STATE_BAD  = 1,	/* unrecoverable failure while processing, do NOT resubmit to same action */
-	BATCH_STATE_SUB  = 2,	/* message submitted for processing, outcome yet unknown */
-	BATCH_STATE_COMM = 3,	/* message successfully commited */
-	BATCH_STATE_DISC = 4, 	/* discarded - processed OK, but do not submit to any other action */
-} batch_state_t;
+#define BATCH_STATE_RDY  0	/* object ready for processing */
+#define BATCH_STATE_BAD  1	/* unrecoverable failure while processing, do NOT resubmit to same action */
+#define BATCH_STATE_SUB  2	/* message submitted for processing, outcome yet unknown */
+#define BATCH_STATE_COMM 3	/* message successfully commited */
+#define BATCH_STATE_DISC 4 	/* discarded - processed OK, but do not submit to any other action */
+typedef unsigned char batch_state_t;
 
 
 /* an object inside a batch, including any information (state!) needed for it to "life".
  */
 struct batch_obj_s {
 	msg_t *pMsg;
-	batch_state_t state;	/* associated state */
 	/* work variables for action processing; these are reused for each action (or block of
 	 * actions)
 	 */
@@ -85,6 +83,13 @@ struct batch_s {
 	sbool *active;		/* which messages are active for processing, NULL=all */
 	sbool bSingleRuleset;	/* do all msgs of this batch use a single ruleset? */
 	batch_obj_t *pElem;	/* batch elements */
+	batch_state_t *eltState;/* state (array!) for individual objects.
+	   			   NOTE: we have moved this out of batch_obj_t because we
+				         get a *much* better cache hit ratio this way. So do not
+					 move it back into this structure! Note that this is really
+					 a HUGE saving, even if it doesn't look so (both profiler
+					 data as well as practical tests indicate that!).
+				*/
 };
 
 
@@ -119,8 +124,8 @@ batchNumMsgs(batch_t *pBatch) {
  */
 static inline void
 batchSetElemState(batch_t *pBatch, int i, batch_state_t newState) {
-	if(pBatch->pElem[i].state != BATCH_STATE_DISC)
-		pBatch->pElem[i].state = newState;
+	if(pBatch->eltState[i] != BATCH_STATE_DISC)
+		pBatch->eltState[i] = newState;
 }
 
 
@@ -129,7 +134,7 @@ batchSetElemState(batch_t *pBatch, int i, batch_state_t newState) {
  */
 static inline int
 batchIsValidElem(batch_t *pBatch, int i) {
-	return(   (pBatch->pElem[i].state != BATCH_STATE_DISC)
+	return(   (pBatch->eltState[i] != BATCH_STATE_DISC)
 	       && (pBatch->active == NULL || pBatch->active[i]));
 }
 
@@ -151,6 +156,7 @@ batchFree(batch_t *pBatch) {
 		}
 	}
 	free(pBatch->pElem);
+	free(pBatch->eltState);
 }
 
 
@@ -164,6 +170,7 @@ batchInit(batch_t *pBatch, int maxElem) {
 	pBatch->iDoneUpTo = 0;
 	pBatch->maxElem = maxElem;
 	CHKmalloc(pBatch->pElem = calloc((size_t)maxElem, sizeof(batch_obj_t)));
+	CHKmalloc(pBatch->eltState = calloc((size_t)maxElem, sizeof(batch_state_t)));
 	// TODO: replace calloc by inidividual writes?
 finalize_it:
 	RETiRet;

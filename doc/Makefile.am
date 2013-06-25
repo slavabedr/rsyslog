@@ -34,11 +34,15 @@ html_files = \
 	ompipe.html \
 	omfwd.html \
 	omfile.html \
+	omjournal.html \
+	imjournal.html \
+	mmanon.html \
 	omusrmsg.html \
 	omstdout.html \
 	omudpspoof.html \
 	omruleset.html \
 	omsnmp.html \
+	sigprov_gt.html \
 	ommysql.html \
 	omoracle.html \
 	omlibdbi.html \
@@ -70,6 +74,7 @@ html_files = \
 	tls_cert_client.html \
 	tls_cert_scenario.html \
 	rainerscript.html \
+	lookup_tables.html \
 	rscript_abnf.html \
 	rsconf1_actionexeconlywhenpreviousissuspended.html \
 	rsconf1_actionresumeinterval.html \
@@ -122,7 +127,6 @@ html_files = \
 	syslog_parsing.html \
 	troubleshoot.html \
 	rsyslog_conf_actions.html \
-	rsyslog_conf_examples.html \
 	rsyslog_conf_filter.html \
 	rsyslog_conf_global.html \
 	rsyslog_conf_modules.html \
@@ -142,13 +146,12 @@ html_files = \
 	rsconf1_abortonuncleanconfig.html \
 	rsconf1_maxopenfiles.html \
 	rsconf1_omfileforcechown.html \
-	rsyslog_conf_file_syntax_differences.html \
-	rsyslog_conf_lines.html \
 	rsyslog_queue_pointers.jpeg \
 	rsyslog_queue_pointers2.jpeg \
 	v6compatibility.html \
 	v7compatibility.html \
 	rsyslog_conf_basic_structure.html \
+	rsyslog_conf_sysklogd_compatibility.html \
 	imkmsg.html \
 	src/classes.dia
 

@@ -188,7 +188,7 @@ static struct cnfparamdescr cnfparamdescr[] = {
 	{ "action.execonlyeverynthtime", eCmdHdlrInt, 0 }, /* legacy: actionexeconlyeverynthtime */
 	{ "action.execonlyeverynthtimetimeout", eCmdHdlrInt, 0 }, /* legacy: actionexeconlyeverynthtimetimeout */
 	{ "action.execonlyonceeveryinterval", eCmdHdlrInt, 0 }, /* legacy: actionexeconlyonceeveryinterval */
-	{ "action.execonlywhenpreviousissuspended", eCmdHdlrInt, 0 }, /* legacy: actionexeconlywhenpreviousissuspended */
+	{ "action.execonlywhenpreviousissuspended", eCmdHdlrBinary, 0 }, /* legacy: actionexeconlywhenpreviousissuspended */
 	{ "action.repeatedmsgcontainsoriginalmsg", eCmdHdlrBinary, 0 }, /* legacy: repeatedmsgcontainsoriginalmsg */
 	{ "action.resumeretrycount", eCmdHdlrInt, 0 }, /* legacy: actionresumeretrycount */
 	{ "action.resumeinterval", eCmdHdlrInt, 0 }
@@ -255,7 +255,7 @@ actionResetQueueParams(void)
 	cs.iActionQueueDeqBatchSize = 16;		/* default batch size */
 	cs.iActionQHighWtrMark = 800;			/* high water mark for disk-assisted queues */
 	cs.iActionQLowWtrMark = 200;			/* low water mark for disk-assisted queues */
-	cs.iActionQDiscardMark = 9800;			/* begin to discard messages */
+	cs.iActionQDiscardMark = 980;			/* begin to discard messages */
 	cs.iActionQDiscardSeverity = 8;			/* discard warning and above */
 	cs.iActionQueueNumWorkers = 1;			/* number of worker threads for the mm queue above */
 	cs.iActionQueMaxFileSize = 1024*1024;
@@ -605,13 +605,17 @@ static void actionDisable(action_t *pThis)
  * CPU time. TODO: maybe a config option for that?
  * rgerhards, 2007-08-02
  */
-static inline void actionSuspend(action_t *pThis, time_t ttNow)
+static inline void actionSuspend(action_t *pThis)
 {
-	if(ttNow == NO_TIME_PROVIDED)
-		datetime.GetTime(&ttNow);
+	time_t ttNow;
+
+	/* note: we can NOT use a cached timestamp, as time may have evolved
+	 * since caching, and this would break logic (and it actually did so!)
+	 */
+	datetime.GetTime(&ttNow);
 	pThis->ttResumeRtry = ttNow + pThis->iResumeInterval * (pThis->iNbrResRtry / 10 + 1);
 	actionSetState(pThis, ACT_STATE_SUSP);
-	DBGPRINTF("earliest retry=%d\n", (int) pThis->ttResumeRtry);
+	DBGPRINTF("action suspended, earliest retry=%d\n", (int) pThis->ttResumeRtry);
 }
 
 
@@ -631,7 +635,7 @@ static inline void actionSuspend(action_t *pThis, time_t ttNow)
  * of its inability to recover. -- rgerhards, 2010-04-26.
  */
 static inline rsRetVal
-actionDoRetry(action_t *pThis, time_t ttNow, int *pbShutdownImmediate)
+actionDoRetry(action_t *pThis, int *pbShutdownImmediate)
 {
 	int iRetries;
 	int iSleepPeriod;
@@ -642,7 +646,9 @@ actionDoRetry(action_t *pThis, time_t ttNow, int *pbShutdownImmediate)
 
 	iRetries = 0;
 	while((*pbShutdownImmediate == 0) && pThis->eState == ACT_STATE_RTRY) {
+		DBGPRINTF("actionDoRetry: enter loop, iRetries=%d\n", iRetries);
 		iRet = pThis->pMod->tryResume(pThis->pModData);
+		DBGPRINTF("actionDoRetry: action->tryResume returned %d\n", iRet);
 		if((pThis->iResumeOKinRow > 9) && (pThis->iResumeOKinRow % 10 == 0)) {
 			bTreatOKasSusp = 1;
 			pThis->iResumeOKinRow = 0;
@@ -650,16 +656,18 @@ actionDoRetry(action_t *pThis, time_t ttNow, int *pbShutdownImmediate)
 			bTreatOKasSusp = 0;
 		}
 		if((iRet == RS_RET_OK) && (!bTreatOKasSusp)) {
+			DBGPRINTF("actionDoRetry: had success RDY again (iRet=%d)\n", iRet);
 			actionSetState(pThis, ACT_STATE_RDY);
 		} else if(iRet == RS_RET_SUSPENDED || bTreatOKasSusp) {
 			/* max retries reached? */
+			DBGPRINTF("actionDoRetry: check for max retries, iResumeRetryCount %d, iRetries %d\n",
+				  pThis->iResumeRetryCount, iRetries);
 			if((pThis->iResumeRetryCount != -1 && iRetries >= pThis->iResumeRetryCount)) {
-				actionSuspend(pThis, ttNow);
+				actionSuspend(pThis);
 			} else {
 				++pThis->iNbrResRtry;
 				++iRetries;
 				iSleepPeriod = pThis->iResumeInterval;
-				ttNow += iSleepPeriod; /* not truly exact, but sufficiently... */
 				srSleep(iSleepPeriod, 0);
 				if(*pbShutdownImmediate) {
 					ABORT_FINALIZE(RS_RET_FORCE_TERM);
@@ -706,7 +714,7 @@ static rsRetVal actionTryResume(action_t *pThis, int *pbShutdownImmediate)
 	if(pThis->eState == ACT_STATE_RTRY) {
 		if(ttNow == NO_TIME_PROVIDED) /* use cached result if we have it */
 			datetime.GetTime(&ttNow);
-		CHKiRet(actionDoRetry(pThis, ttNow, pbShutdownImmediate));
+		CHKiRet(actionDoRetry(pThis, pbShutdownImmediate));
 	}
 
 	if(Debug && (pThis->eState == ACT_STATE_RTRY ||pThis->eState == ACT_STATE_SUSP)) {
@@ -852,6 +860,9 @@ static rsRetVal releaseBatch(action_t *pAction, batch_t *pBatch)
 
 	ASSERT(pAction != NULL);
 
+	if(pAction->eParamPassing == ACT_STRING_PASSING || pAction->eParamPassing == ACT_MSG_PASSING)
+		goto done; /* we need to do nothing with these types! */
+
 	for(i = 0 ; i < batchNumMsgs(pBatch) && !*(pBatch->pbShutdownImmediate) ; ++i) {
 		pElem = &(pBatch->pElem[i]);
 		if(batchIsValidElem(pBatch, i)) {
@@ -871,19 +882,6 @@ static rsRetVal releaseBatch(action_t *pAction, batch_t *pBatch)
 					}
 				}
 				break;
-			case ACT_STRING_PASSING:
-			case ACT_MSG_PASSING:
-				/* nothing to do in that case */
-				/* TODO ... and yet we do something ;) This is considered not
-				 * really needed, but I was not bold enough to remove that while
-				 * fixing the stable. It should be removed in a devel version
-				 * soon (I really don't see a reason why we would need it).
-				 * rgerhards, 2010-12-16
-				 */
-				for(j = 0 ; j < pAction->iNumTpls ; ++j) {
-					((uchar**)pElem->staticActParams)[j] = NULL;
-				}
-				break;
 			case ACT_JSON_PASSING:
 				for(j = 0 ; j < pAction->iNumTpls ; ++j) {
 					json_object_put((struct json_object*)
@@ -891,11 +889,15 @@ static rsRetVal releaseBatch(action_t *pAction, batch_t *pBatch)
 					pElem->staticActParams[j] = NULL;
 				}
 				break;
+			case ACT_STRING_PASSING:
+			case ACT_MSG_PASSING:
+				/* can never happen, just to keep compiler happy! */
+				break;
 			}
 		}
 	}
 
-	RETiRet;
+done:	RETiRet;
 }
 
 
@@ -959,6 +961,8 @@ actionProcessMessage(action_t *pThis, msg_t *pMsg, void *actParams, int *pbShutd
 	ISOBJ_TYPE_assert(pMsg, msg);
 
 	CHKiRet(actionPrepare(pThis, pbShutdownImmediate));
+	if(pThis->pMod->mod.om.SetShutdownImmdtPtr != NULL)
+		pThis->pMod->mod.om.SetShutdownImmdtPtr(pThis->pModData, pbShutdownImmediate);
 	if(pThis->eState == ACT_STATE_ITX)
 		CHKiRet(actionCallDoAction(pThis, pMsg, actParams));
 
@@ -1076,11 +1080,11 @@ tryDoAction(action_t *pAction, batch_t *pBatch, int *pnElem)
 					++iCommittedUpTo;
 					//pBatch->pElem[iCommittedUpTo++].state = BATCH_STATE_COMM;
 				}
-				pBatch->pElem[i].state = BATCH_STATE_SUB;
+				pBatch->eltState[i] = BATCH_STATE_SUB;
 			} else if(localRet == RS_RET_DEFER_COMMIT) {
-				pBatch->pElem[i].state = BATCH_STATE_SUB;
+				pBatch->eltState[i] = BATCH_STATE_SUB;
 			} else if(localRet == RS_RET_DISCARDMSG) {
-				pBatch->pElem[i].state = BATCH_STATE_DISC;
+				pBatch->eltState[i] = BATCH_STATE_DISC;
 			} else {
 				dbgprintf("tryDoAction: unexpected error code %d[nElem %d, Commited UpTo %d], finalizing\n",
 					  localRet, *pnElem, iCommittedUpTo);
@@ -1117,6 +1121,7 @@ submitBatch(action_t *pAction, batch_t *pBatch, int nElem)
 
 	assert(pBatch != NULL);
 
+	DBGPRINTF("submitBatch: enter, nElem %d\n", nElem);
 	wasDoneTo = pBatch->iDoneUpTo;
 	bDone = 0;
 	do {
@@ -1138,13 +1143,14 @@ submitBatch(action_t *pAction, batch_t *pBatch, int nElem)
 		   || localRet == RS_RET_DEFER_COMMIT) {
 			bDone = 1;
 		} else if(localRet == RS_RET_SUSPENDED) {
-			; /* do nothing, this will retry the full batch */
+			DBGPRINTF("action ret RS_RET_SUSPENDED - retry full batch\n");
+			/* do nothing, this will retry the full batch */
 		} else if(localRet == RS_RET_ACTION_FAILED) {
 			/* in this case, everything not yet committed is BAD */
 			for(i = pBatch->iDoneUpTo ; i < wasDoneTo + nElem ; ++i) {
-				if(   pBatch->pElem[i].state != BATCH_STATE_DISC
-				   && pBatch->pElem[i].state != BATCH_STATE_COMM ) {
-					pBatch->pElem[i].state = BATCH_STATE_BAD;
+				if(   pBatch->eltState[i] != BATCH_STATE_DISC
+				   && pBatch->eltState[i] != BATCH_STATE_COMM ) {
+					pBatch->eltState[i] = BATCH_STATE_BAD;
 					pBatch->pElem[i].bPrevWasSuspended = 1;
 					STATSCOUNTER_INC(pAction->ctrFail, pAction->mutCtrFail);
 				}
@@ -1220,7 +1226,7 @@ prepareBatch(action_t *pAction, batch_t *pBatch, sbool **activeSave, int *bMustR
 	for(i = 0 ; i < batchNumMsgs(pBatch) && !*(pBatch->pbShutdownImmediate) ; ++i) {
 		pElem = &(pBatch->pElem[i]);
 		if(batchIsValidElem(pBatch, i)) {
-			pElem->state = BATCH_STATE_RDY;
+			pBatch->eltState[i] = BATCH_STATE_RDY;
 			if(prepareDoActionParams(pAction, pElem, &ttNow) != RS_RET_OK) {
 				/* make sure we have our copy of "active" array */
 				if(!*bMustRestoreActivePtr) {
@@ -1268,8 +1274,10 @@ processBatchMain(action_t *pAction, batch_t *pBatch, int *pbShutdownImmediate)
 
 	assert(pBatch != NULL);
 
-	pbShutdownImmdtSave = pBatch->pbShutdownImmediate;
-	pBatch->pbShutdownImmediate = pbShutdownImmediate;
+	if(pbShutdownImmediate != NULL) {
+		pbShutdownImmdtSave = pBatch->pbShutdownImmediate;
+		pBatch->pbShutdownImmediate = pbShutdownImmediate;
+	}
 	CHKiRet(prepareBatch(pAction, pBatch, &activeSave, &bMustRestoreActivePtr));
 
 	/* We now must guard the output module against execution by multiple threads. The
@@ -1300,7 +1308,8 @@ processBatchMain(action_t *pAction, batch_t *pBatch, int *pbShutdownImmediate)
 	}
 
 finalize_it:
-	pBatch->pbShutdownImmediate = pbShutdownImmdtSave;
+	if(pbShutdownImmediate != NULL)
+		pBatch->pbShutdownImmediate = pbShutdownImmdtSave;
 	RETiRet;
 }
 #pragma GCC diagnostic warning "-Wempty-body"
@@ -1553,7 +1562,7 @@ doSubmitToActionQNotAllMarkBatch(action_t *pAction, batch_t *pBatch)
 	copyActive(pBatch);
 
 	for(i = 0 ; i < batchNumMsgs(pBatch) ; ++i) {
-		if((pBatch->pElem[i].state == BATCH_STATE_DISC) || !pBatch->active[i])
+		if((pBatch->eltState[i] == BATCH_STATE_DISC) || !pBatch->active[i])
 			continue;
 		if(now == 0) {
 			now = datetime.GetTime(NULL); /* good time call - the only one done */
@@ -1631,7 +1640,7 @@ doQueueEnqObjDirectBatch(action_t *pAction, batch_t *pBatch)
 				bNeedSubmit = 1;
 			}
 			DBGPRINTF("action %p[%d]: valid:%d state:%d execWhenPrev:%d prevWasSusp:%d\n",
-				   pAction, i, batchIsValidElem(pBatch, i),  pBatch->pElem[i].state,
+				   pAction, i, batchIsValidElem(pBatch, i),  pBatch->eltState[i],
 				   pAction->bExecWhenPrevSusp, pBatch->pElem[i].bPrevWasSuspended);
 		}
 		if(bNeedSubmit) {
@@ -1671,7 +1680,7 @@ doSubmitToActionQBatch(action_t *pAction, batch_t *pBatch)
 		 */
 		for(i = 0 ; i < batchNumMsgs(pBatch) && !*(pBatch->pbShutdownImmediate) ; ++i) {
 			DBGPRINTF("action %p: valid:%d state:%d execWhenPrev:%d prevWasSusp:%d\n",
-		           pAction, batchIsValidElem(pBatch, i),  pBatch->pElem[i].state,
+		           pAction, batchIsValidElem(pBatch, i),  pBatch->eltState[i],
 			   pAction->bExecWhenPrevSusp, pBatch->pElem[i].bPrevWasSuspended);
 			if(   batchIsValidElem(pBatch, i) 
 			   && (pAction->bExecWhenPrevSusp == 0 || pBatch->pElem[i].bPrevWasSuspended == 1)) {
@@ -1699,7 +1708,7 @@ helperSubmitToActionQComplexBatch(action_t *pAction, batch_t *pBatch)
 		  pAction, module.GetStateName(pAction->pMod));
 	for(i = 0 ; i < batchNumMsgs(pBatch) && !*(pBatch->pbShutdownImmediate) ; ++i) {
 		DBGPRINTF("action %p: valid:%d state:%d execWhenPrev:%d prevWasSusp:%d\n",
-		           pAction, batchIsValidElem(pBatch, i),  pBatch->pElem[i].state,
+		           pAction, batchIsValidElem(pBatch, i),  pBatch->eltState[i],
 			   pAction->bExecWhenPrevSusp, pBatch->pElem[i].bPrevWasSuspended);
 		if(   batchIsValidElem(pBatch, i)
 		   && ((pAction->bExecWhenPrevSusp  == 0) || pBatch->pElem[i].bPrevWasSuspended) ) {
@@ -1870,7 +1879,7 @@ addAction(action_t **ppAction, modInfo_t *pMod, void *pModData,
 	pAction->eState = ACT_STATE_RDY; /* action is enabled */
 
 	if(bSuspended)
-		actionSuspend(pAction, datetime.GetTime(NULL)); /* "good" time call, only during init and unavoidable */
+		actionSuspend(pAction);
 
 	CHKiRet(actionConstructFinalize(pAction, queueParams));
 	
