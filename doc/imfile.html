@@ -1,156 +1,418 @@
-<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
-<html>
-	<head>
-		<meta content="en" http-equiv="Content-Language" />
-		<title>Text File Input Monitor</title>
-	</head>
-	<body>
-		<p>
-			<a href="rsyslog_conf_modules.html">back</a></p>
-		<h1>
-			Text File Input Module</h1>
-		<p>
-			<b>Module Name:&nbsp;&nbsp;&nbsp; imfile</b></p>
-		<p>
-			<b>Author: </b>Rainer Gerhards &lt;rgerhards@adiscon.com&gt;</p>
-		<p>
-			<b>Description</b>:</p>
-		<p>
-			Provides the ability to convert any standard text file into a syslog message. A standard text file is a file consisting of printable characters with lines being&nbsp;delimited by LF.</p>
-		<p>
-			The file is read line-by-line and any line read is passed to rsyslog&#39;s rule engine. The rule engine applies filter conditons and selects which actions needs to be carried out. Empty lines are <b>not</b> processed, as they would result in empty syslog records. They are simply ignored.</p>
-		<p>
-			As new lines are written they are taken from the file and processed. Please note that this happens based on a polling interval and not immediately. The file monitor support file rotation. To fully work, rsyslogd must run while the file is rotated. Then, any remaining lines from the old file are read and processed and when done with that, the new file is being processed from the beginning. If rsyslogd is stopped during rotation, the new file is read, but any not-yet-reported lines from the previous file can no longer be obtained.</p>
-		<p>
-			When rsyslogd is stopped while monitoring a text file, it records the last processed location and continues to work from there upon restart. So no data is lost during a restart (except, as noted above, if the file is rotated just in this very moment).</p>
-		<p>
-			Currently, the file must have a fixed name and location (directory). It is planned to add support for dynamically generating file names in the future.</p>
-		<p>
-			Multiple files may be monitored by specifying $InputRunFileMonitor multiple times.</p>
-		<p>
-			<b>Configuration Directives</b>:</p>
-		<p>
-			<b>Module Directives</b></p>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en-US"
+ xmlns:og='http://opengraphprotocol.org/schema/'
+ xmlns:fb='http://www.facebook.com/2008/fbml'>
+
+<head profile="http://gmpg.org/xfn/11">
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+
+<title>Text File Input Monitor  
+rsyslog</title>
+
+<link rel="stylesheet" href="http://www.rsyslog.com/wp-content/themes/rsyslog/style.css" type="text/css" media="screen" />
+<link rel="pingback" href="http://www.rsyslog.com/xmlrpc.php" />
+
+
+
+<link rel="alternate" type="application/rss+xml" title="rsyslog &raquo; Feed" href="http://www.rsyslog.com/feed/" />
+<link rel="alternate" type="application/rss+xml" title="rsyslog &raquo; Comments Feed" href="http://www.rsyslog.com/comments/feed/" />
+<style type="text/css">img.nothumb{border:0;margin:0 0 0 2px !important;}</style>
+<!-- Tweet This v1.8.2 b036 mode alpha zeta -->
+<link rel="EditURI" type="application/rsd+xml" title="RSD" href="http://www.rsyslog.com/xmlrpc.php?rsd" />
+<link rel="wlwmanifest" type="application/wlwmanifest+xml" href="http://www.rsyslog.com/wp-includes/wlwmanifest.xml" /> 
+<meta name="generator" content="WordPress 3.5.1" />
+</head>
+<body class="error404">
+<script type="text/javascript" src="https://apis.google.com/js/plusone.js"></script>
+
+<div class="ad_right">
+<!-- SiteSearch Google -->
+<form method="get" action="http://www.google.com/custom" target="google_window">
+<table border="0">
+<tr><td nowrap="nowrap" valign="top" align="left" height="32">
+<a href="http://www.google.com/">
+<img src="http://www.google.com/logos/Logo_25wht.gif" border="0" alt="Google" align="middle"></img></a>
+<br/>
+<input type="hidden" name="domains" value="www.rsyslog.com"></input>
+<label for="sbi" style="display: none">Enter your search terms</label>
+<input type="text" name="q" size="20" maxlength="255" value="" id="sbi"></input>
+</td></tr>
+<tr>
+<td nowrap="nowrap">
+<table>
+<tr>
+<td>
+<input type="radio" name="sitesearch" value="www.rsyslog.com" checked id="ss0"></input>
+<label for="ss0" title="Search www.rsyslog.com"><font size="-1" color="#000000">rsyslog.com</font></label></td>
+<td>
+<input type="radio" name="sitesearch" value="" id="ss1"></input>
+<label for="ss1" title="Search the Web"><font size="-1" color="#000000">Web</font></label></td>
+</tr>
+</table>
+<label for="sbb" style="display: none">Submit search form</label>
+<input type="submit" name="sa" value="Search" id="sbb"></input>
+<input type="hidden" name="client" value="pub-3204610807458280"></input>
+<input type="hidden" name="forid" value="1"></input>
+<input type="hidden" name="ie" value="ISO-8859-1"></input>
+<input type="hidden" name="oe" value="ISO-8859-1"></input>
+<input type="hidden" name="flav" value="0000"></input>
+<input type="hidden" name="sig" value="hr7-FrSekL7ZQYz4"></input>
+<input type="hidden" name="cof" value="GALT:#9A2C06;GL:1;DIV:#33FFFF;VLC:D03500;AH:center;BGC:99CCFF;LBGC:CCE5F9;ALC:440066;LC:440066;T:336699;GFNT:223472;GIMP:223472;LH:50;LW:111;L:http://www.rsyslog.com/themes/rsyslog/images/logo.gif;S:http://www.rsyslog.com;FORID:1"></input>
+<input type="hidden" name="hl" value="en"></input>
+</td></tr></table>
+</form>
+<!-- SiteSearch Google -->
+<br \>
+
+<script type="text/javascript"><!--
+google_ad_client = "pub-3204610807458280";
+/* rsyslog.com - right */
+google_ad_slot = "7199788151";
+google_ad_width = 160;
+google_ad_height = 600;
+//-->
+</script>
+<script type="text/javascript"
+src="http://pagead2.googlesyndication.com/pagead/show_ads.js">
+</script>
+</div>
+
+
+<div id="page">
+<div id="header" role="banner">
+<!-- <a href="/"><img src="http://www.rsyslog.com/wp-content/themes/rsyslog/images/logo.png" width="200" height="80" alt="rsyslog" title="rsyslog" /></a> -->
+</div>
+<div id="menu">
+<ul class="clearfloat">
+	<li><a href="/" title="rsyslog Home"><img src="http://www.rsyslog.com/wp-content/themes/rsyslog/images/logo-klein.png" alt="rsyslog" title="rsyslog" /></a></li>
+	<li><a title="Project">Project</a>
+	<ul>
+		<li><a href="/news/" title="News">News</a></li>
+		<li><a href="/download/" title="Download">Download</a></li>
+		
+			<li><a href="/rhelcentos-rpms/" title="RPM Repository (RHEL / Centos)">RPM's (RHEL / Centos)</a></li>
+			<li><a href="/ubuntu-repository/" title="Ubuntu Repository">Ubuntu Repository</a></li>
+		
+		
+		<li><a href="/changelog/" title="Changelog">Changelog</a></li>
+		<li><a href="/features/" title="Features">Features</a></li>
+		<li><a href="/project-status/" title="Status">Status</a></li>
+
+		<li><a href="http://git.adiscon.com/?p=rsyslog.git;a=summary" title="Browse Source">Browse Source</a></li>
+		<li><a href="http://bugzilla.adiscon.com/buglist.cgi?product=rsyslog&list_id=190" title="Bug Tracker">Bug Tracker</a></li>
+		<li><a href="/windows-agent/" title="RSyslog Windows Agent">Windows Agent</a>
 		<ul>
-			<li>
-				<span style="font-weight: bold;">PollingInterval seconds</span><br />
-				This is a global setting. It specifies how often files are to be polled for new data. The time specified is in seconds. The <span style="font-weight: bold;">default value</span> is 10 seconds. Please note that future releases of imfile may support per-file polling intervals, but currently this is not the case. If multiple PollingInterval statements are present in rsyslog.conf, only the last one is used.<br />
-				A short poll interval provides more rapid message forwarding, but requires more system ressources. While it is possible, we stongly recommend not to set the polling interval to 0 seconds. That will make rsyslogd become a CPU hog, taking up considerable ressources. It is supported, however, for the few very unusual situations where this level may be needed. Even if you need quick response, 1 seconds should be well enough. Please note that imfile keeps reading files as long as there is any data in them. So a &quot;polling sleep&quot; will only happen when nothing is left to be processed.</li>
+			<li><a href="/windows-agent/windows-agent-download/" title="RSyslog Windows Agent Download">Download Windows Agent</a>
+			
 		</ul>
-		<p>
-			<b>Action Directives</b></p>
+
+		</li>
+	</ul>
+	</li>
+	<li><a title="Help">Help</a>
+	<ul>
+		<li><a href="/doc/manual.html" title="Documentation">Documentation</a></li>
+		<li><a href="/wp-content/themes/rsyslog/manual/index.html" target="_blank" title="RSyslog Windows Agent Manual">Manual Windows Agent</a> 
+		<li><a href="/faq/" title="FAQ">FAQ</a></li>
+			<li class="cat-item cat-item-5031"><a href="http://www.rsyslog.com/guides/" title="View all posts filed under Guides for rsyslog">Guides for rsyslog</a>
+</li>
+			<li class="cat-item cat-item-4925"><a href="http://www.rsyslog.com/guides-for-windows-agent/" title="View all posts filed under Guides for Windows Agent">Guides for Windows Agent</a>
+</li>
+		<li><a href="/security-advisories/" title="Security Advisories">Security Advisories</a>
+		<li><a href="/video-tutorials/" title="Video Tutorials">Video Tutorials</a>
+		<li><a href="http://kb.monitorware.com/kbeventdb-list-1-Adiscon-rsyslog.html" title="Error Messages">Error Messages</a>
+		<li><a href="/professional-services/" title="Professional Services">Professional Services</a>
+
+	</ul>
+	</li>
+	<li><a title="Community">Community</a>
 		<ul>
-			<li>
-				<strong>(required) File&nbsp;/path/to/file</strong><br />
-				The file being monitored. So far, this must be an absolute name (no macros or templates).</li>
-			<li>
-				<span style="font-weight: bold;">(required) Tag tag:</span><br />
-				The syslog tag to be used for messages that originate from this file. If you would like to see the colon after the tag, you need to specify it here (as shown above).</li>
-			<li>
-				<span style="font-weight: bold;">(required) StateFile &lt;name-of-state-file&gt;</span><br />
-				Rsyslog must keep track of which parts of the to be monitored file it already processed. This is done in the state file. This file always is created in the rsyslog working directory (configurable via $WorkDirectory). So you need to provide a file name here, not a path. Be careful to use unique names for different files being monitored. If there are duplicates, all sorts of &quot;interesting&quot; things may happen. Rsyslog currently does not check if a name is specified multiple times. Note that when $WorkDirectory is not set or set to a non-writable location, the state file will not be generated.</li>
-			<li>
-				<span style="font-weight: bold;">Facility facility</span><br />
-				The syslog facility to be assigned to lines read. Can be specified in textual form (e.g. &quot;local0&quot;, &quot;local1&quot;, ...) or as numbers (e.g. 128 for &quot;local0&quot;). Textual form is suggested. <span style="font-weight: bold;">Default</span> &nbsp;is &quot;local0&quot;.</li>
-			<li>
-				<span style="font-weight: bold;">Severity</span><br />
-				The syslog severity to be assigned to lines read. Can be specified in textual form (e.g. &quot;info&quot;, &quot;warning&quot;, ...) or as numbers (e.g. 4 for &quot;info&quot;). Textual form is suggested. <span style="font-weight: bold;">Default</span> is &quot;notice&quot;.</li>
-			<li>
-				<b>PersistStateInterval</b> [lines]<br />
-				Specifies how often the state file shall be written when processing the input file. The <strong>default</strong> value is 0, which means a new state file is only written when the monitored files is being closed (end of rsyslogd execution). Any other value n means that the state file is written every time n file lines have been processed. This setting can be used to guard against message duplication due to fatal errors (like power fail). Note that this setting affects imfile performance, especially when set to a low value. Frequently writing the state file is very time consuming.</li>
-			<li>
-				<b>ReadMode</b> [mode]<br />
-				This mode should defined when having multiline messages. The value can range from 0-2 and determines the multiline detection method.<br />
-				0 (<strong>default</strong>) - line based (Each line is a new message)<br />
-				1 - paragraph (There is a blank line between log messages)<br />
-				2 - indented (New log messages start at the beginning of a line. If a line starts with a space it is part of the log message before it)</li>
-			<li>
-				<b>MaxLinesAtOnce</b> [number]<br />
-				This is useful if multiple files need to be monitored. If set to 0, each file will be fully processed and then processing switches to the next file (this was the default in previous versions). If it is set, a maximum of [number] lines is processed in sequence for each file, and then the file is switched. This provides a kind of mutiplexing the load of multiple files and probably leads to a more natural distribution of events when multiple busy files are monitored. The <strong>default</strong> is 1024.</li>
-			<li>
-				<b>MaxSubmitAtOnce</b> [number]<br />
-				This is an expert option. It can be used to set the maximum input batch size that imfile can generate. The <strong>default</strong> is 1024, which is suitable for a wide range of applications. Be sure to understand rsyslog message batch processing before you modify this option. If you do not know what this doc here talks about, this is a good indication that you should NOT modify the default.</li>
-			<li>
-				<b>Ruleset</b> &lt;ruleset&gt; Binds the listener to a specific <a href="multi_ruleset.html">ruleset</a>.</li>
+			<li><a href="http://kb.monitorware.com/rsyslog-f40.html" title="Forum">Forum</a></li>
+			<li><a href="http://lists.adiscon.net/mailman/listinfo/rsyslog" title="Mailinglist">Mailinglist</a></li>
+			<li><a href="http://wiki.rsyslog.com/index.php/Main_Page" title="Wiki">Wiki</a></li>
+			<!--<li><a href="/sponsors/">Sponsors</a></li>-->
 		</ul>
-		<p>
-			<b>Caveats/Known Bugs:</b></p>
-		<p>
-			So far, only 100 files can be monitored. If more are needed, the source needs to be patched. See define MAX_INPUT_FILES in imfile.c</p>
-		<p>
-			Powertop users may want to notice that imfile utilizes polling. Thus, it is no good citizen when it comes to conserving system power consumption. We are currently evaluating to move to inotify(). However, there are a number of subtle issues, which needs to be worked out first. We will make the change as soon as we can. If you can afford it, we recommend using a long polling interval in the mean time.</p>
-		<p>
-			<b>Sample:</b></p>
-		<p>
-			The following sample monitors two files. If you need just one, remove the second one. If you need more, add them according to the sample ;). This code must be placed in /etc/rsyslog.conf (or wherever your distro puts rsyslog&#39;s config files). Note that only commands actually needed need to be specified. The second file uses less commands and uses defaults instead.</p>
-		<p>
-			<textarea cols="60" rows="15">module(load=&quot;imfile&quot; PollingInterval=&quot;10&quot;) #needs to be done just once
+	</li>
+	<li><a title="Tools">Tools</a>
+	<ul>
+		<li><a href="/regex/" title="Regex">Regex</a></li>
+		<li><a href="http://loganalyzer.adiscon.com" title="LogAnalyzer">LogAnalyzer</a></li>
+		<li><a href="http://www.winsyslog.com" title="WinSyslog">WinSyslog</a></li>
+		<li><a href="http://www.eventreporter.com" title="EventReporter">EventReporter</a></li>
+		<li><a href="http://www.mwagent.com" title="MonitorWare Agent">MonitorWare Agent</a></li>
+	</ul>
+	</li>
+	<li><a title="Purchase">Purchase</a>
+	<ul>
+		<li><a href="/professional-services/" title="Professional Services">Professional Services</a></li>
+		<li><a href="/windows-agent/order-now/" title="RSyslog Windows Agent Purchasing">Purchase Windows Agent</a>
+	</ul>
+	</li>
+	<li style="margin-top: 5px;"><form action="https://www.paypal.com/cgi-bin/webscr" method="post">
+		<input type="hidden" name="cmd" value="_s-xclick">
+		<input type="image" src="https://www.paypal.com/en_US/i/btn/x-click-but04.gif" border="0" name="submit" alt="Make payments with PayPal - it's fast, free and secure!">
+		<img alt="" border="0" src="https://www.paypal.com/en_US/i/scr/pixel.gif" width="1" height="1">
+		<input type="hidden" name="encrypted" value="-----BEGIN PKCS7-----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-----END PKCS7-----
+		">
+		</form>
+	</li>
+	<li style="margin-top: 10px;">
+	<iframe src="http://www.facebook.com/plugins/like.php?href=http%3A%2F%2Fwww.facebook.com%2F%3Fref%3Dlogo%23%21%2Fpages%2FRsyslog%2F129738400403087%3Fv%3Dwall%26ref%3Dts&amp;layout=button_count&amp;show_faces=true&amp;width=100&amp;action=like&amp;colorscheme=light&amp;height=21" scrolling="no" frameborder="0" style="border:none; overflow:hidden; width:100px; height:21px;" allowTransparency="true"></iframe>
+	</li>
+	<li style="margin-top: 10px;">
+	<g:plusone size="medium"></g:plusone>
+	</li>
+</ul>
+</div>
+
+<div class="ad_oben">
+<script type="text/javascript"><!--
+google_ad_client = "pub-3204610807458280";
+/* rsyslogcom - header */
+google_ad_slot = "3788436627";
+google_ad_width = 728;
+google_ad_height = 90;
+//-->
+</script>
+<script type="text/javascript"
+src="http://pagead2.googlesyndication.com/pagead/show_ads.js">
+</script>
+</div>
+
+<div class="support"><a href="/professional-services" title="Professional Support"><img src="http://www.rsyslog.com/wp-content/themes/rsyslog/images/rsyslog_support.png" alt="Professional Support" title="Professional Support"></a></div>
+
+<hr />
+
+<div id="ad-linkads" >
+	<script type="text/javascript"><!--
+	google_ad_client = "pub-3204610807458280";
+	/* rsyslog.com - linkads */
+	google_ad_slot = "8635602929";
+	google_ad_width = 728;
+	google_ad_height = 15;
+	//-->
+	</script>
+	<script type="text/javascript"
+	src="http://pagead2.googlesyndication.com/pagead/show_ads.js">
+	</script>
+	<br/>
+</div> 
+
+<hr />
+
+	<div id="content" class="narrowcolumn">
+		
+<a href="rsyslog_conf_modules.html">back</a>
+
+<h1>Text File Input Module</h1>
+<p><b>Module Name:&nbsp;&nbsp;&nbsp; imfile</b></p>
+<p><b>Author: </b>Rainer Gerhards
+&lt;rgerhards@adiscon.com&gt;</p>
+<p><b>Description</b>:</p>
+<p>Provides the ability to convert any standard text file into
+a syslog message. A standard
+text file is a file consisting of printable characters with lines
+being&nbsp;delimited by LF.</p>
+<p>The file is read line-by-line and any line read is passed to
+rsyslog's rule engine. The rule engine applies filter conditons and
+selects which actions needs to be carried out. Empty lines are <b>not</b>
+processed, as they would result in empty syslog records. They are simply
+ignored.</p>
+<p>As new lines are written they are taken from the file and
+processed. Please note that this happens based on a polling interval
+and not immediately. The file monitor support file rotation. To fully
+work, rsyslogd must run while the file is rotated. Then, any remaining
+lines from the old file are read and processed and when done with that,
+the new file is being processed from the beginning. If rsyslogd is
+stopped during rotation, the new file is read, but any not-yet-reported
+lines from the previous file can no longer be obtained.</p>
+<p>When rsyslogd is stopped while monitoring a text file, it
+records the last processed location and continues to work from there
+upon restart. So no data is lost during a restart (except, as noted
+above, if the file is rotated just in this very moment).</p>
+<p>Currently, the file must have a fixed name and location
+(directory). It is planned to add support for dynamically generating
+file names in the future.</p>
+<p>Multiple files may be monitored by specifying
+$InputRunFileMonitor multiple times.
+</p>
+
+<p><b>Configuration Directives</b>:</p>
+<p><b>Module Directives</b></p>
+<ul>
+<li><span style="font-weight: bold;">PollingInterval
+seconds</span><br>
+This is a global setting. It specifies how often files are to be polled
+for new data. The time specified is in seconds. The <span style="font-weight: bold;">default value</span> is 10
+seconds. Please note that future
+releases of imfile may support per-file polling intervals, but
+currently this is not the case. If multiple PollingInterval
+statements are present in rsyslog.conf, only the last one is used.<br>
+A short poll interval provides more rapid message forwarding, but
+requires more system ressources. While it is possible, we stongly
+recommend not to set the polling interval to 0 seconds. That will make
+rsyslogd become a CPU hog, taking up considerable ressources. It is
+supported, however, for the few very unusual situations where this
+level may be needed. Even if you need quick response, 1 seconds should
+be well enough. Please note that imfile keeps reading files as long as
+there is any data in them. So a "polling sleep" will only happen when
+nothing is left to be processed.</li>
+</ul>
+
+<p><b>Action Directives</b></p>
+<ul>
+<li><strong>File&nbsp;/path/to/file</strong><br>
+The file being monitored. So far, this must be an absolute name (no
+macros or templates)</li>
+<li><span style="font-weight: bold;">Tag
+tag:</span><br>
+The tag to be used for messages that originate from this file. If you
+would like to see the colon after the tag, you need to specify it here
+(as shown above).</li>
+<li><span style="font-weight: bold;">StateFile
+&lt;name-of-state-file&gt;</span><br>
+Rsyslog must keep track of which parts of the to be monitored file it
+already processed. This is done in the state file. This file always is
+created in the rsyslog working directory (configurable via
+$WorkDirectory). Be careful to use unique names for different files
+being monitored. If there are duplicates, all sorts of "interesting"
+things may happen. Rsyslog currently does not check if a name is
+specified multiple times.
+Note that when $WorkDirectory is not set or set to a non-writable
+location, the state file will not be generated.</li>
+<li><span style="font-weight: bold;">Facility
+facility</span><br>
+The syslog facility to be assigned to lines read. Can be specified in
+textual form (e.g. "local0", "local1", ...) or as numbers (e.g. 128 for
+"local0"). Textual form is suggested. <span style="font-weight: bold;">Default</span> &nbsp;is
+"local0".<span style="font-weight: bold;"></span></li>
+<li><span style="font-weight: bold;">Severity</span><br>
+The
+syslog severity to be assigned to lines read. Can be specified in
+textual form (e.g. "info", "warning", ...) or as numbers (e.g. 4 for
+"info"). Textual form is suggested. <span style="font-weight: bold;">Default</span>
+is "notice".</li>
+<li><b>PersistStateInterval</b> [lines]</b><br>
+Specifies how often the state file shall be written when processing the input
+file. The default value is 0, which means a new state file is only written when 
+the monitored files is being closed (end of rsyslogd execution). Any other
+value n means that the state file is written every time n file lines have
+been processed. This setting can be used to guard against message duplication due
+to fatal errors (like power fail). Note that this setting affects imfile
+performance, especially when set to a low value. Frequently writing the state
+file is very time consuming.
+<li><b>ReadMode</b> [mode]</b><br>
+This mode should defined when having multiline messages. The value can range from 0-2 and determines the multiline detection method.
+<br>0 (default) - line based (Each line is a new message)
+<br>1 - paragraph (There is a blank line between log messages)
+<br>2 - indented (New log messages start at the beginning of a line. If a line starts with a space it is part of the log message before it)
+<li><b>MaxLinesAtOnce</b> [number]</b>
+<br>
+This is useful if multiple files need to be monitored. If set to 0, each file
+will be fully processed and then processing switches to the next file
+(this was the default in previous versions). If it is set, a maximum of
+[number] lines is processed in sequence for each file, and then the file is
+switched. This provides a kind of mutiplexing the load of multiple files and
+probably leads to a more natural distribution of events when multiple busy files
+are monitored. The default is 1024.
+<li><b>MaxSubmitAtOnce</b> [number]</b>
+<br>
+This is an expert option. It can be used to set the maximum input batch size that 
+imfile can generate. The default is 1024, which is suitable for a wide range of 
+applications. Be sure to understand rsyslog message batch processing before you 
+modify this option. If you do not know what this doc here talks about, this is a 
+good indication that you should NOT modify the default.
+<li><b>Ruleset</b> &lt;ruleset&gt;
+Binds the listener to a specific <a href="multi_ruleset.html">ruleset</a>.</li>
+</ul>
+<b>Caveats/Known Bugs:</b>
+<p>So far, only 100 files can be monitored. If more are needed,
+the source needs to be patched. See define MAX_INPUT_FILES in imfile.c</p><p>Powertop
+users may want to notice that imfile utilizes polling. Thus, it is no
+good citizen when it comes to conserving system power consumption. We
+are currently evaluating to move to inotify(). However, there are a
+number of subtle issues, which needs to be worked out first. We will
+make the change as soon as we can. If you can afford it, we recommend
+using a long polling interval in the mean time.
+</p>
+<p><b>Sample:</b></p>
+<p>The following sample monitors two files. If you need just one,
+remove the second one. If you need more, add them according to the
+sample ;). This code must be placed in /etc/rsyslog.conf (or wherever
+your distro puts rsyslog's config files). Note that only commands
+actually needed need to be specified. The second file uses less
+commands and uses defaults instead.<br>
+</p>
+<textarea rows="15" cols="60">module(load="imfile" PollingInterval="10") #needs to be done just once
 # File 1
-input(type=&quot;imfile&quot;
-      File=&quot;/path/to/file1&quot;
-      Tag=&quot;tag1&quot;
-      StateFile=&quot;statefile1&quot;
-      Severity=&quot;error&quot;
-      Facility=&quot;local7&quot;)
+input(type="imfile" File="/path/to/file1" 
+      Tag="tag1" 
+      StateFile="/var/spool/rsyslog/statefile1" 
+      Severity="error" 
+      Facility="local7")
 # File 2
-input(type=&quot;imfile&quot;
-      File=&quot;/path/to/file2&quot;
-      Tag=&quot;tag2&quot;
-      StateFile=&quot;statefile2&quot;)
-# ... and so on ... #</textarea></p>
-		<p>
-			<b>Legacy Configuration Directives</b>:</p>
-		<ul>
-			<li>
-				<strong>$InputFileName&nbsp;/path/to/file</strong><br />
-				equivalent to: File</li>
-			<li>
-				<span style="font-weight: bold;">$InputFileTag tag:</span><br />
-				equivalent to: Tag</li>
-			<li>
-				<span style="font-weight: bold;">$InputFileStateFile &lt;name-of-state-file&gt;</span><br />
-				equivalent to: StateFile</li>
-			<li>
-				<span style="font-weight: bold;">$InputFileFacility facility</span><br />
-				equivalent to: Facility</li>
-			<li>
-				<span style="font-weight: bold;">$InputFileSeverity</span><br />
-				equivalent to: Severity</li>
-			<li>
-				<span style="font-weight: bold;">$InputRunFileMonitor</span><br />
-				This <span style="font-weight: bold;">activates</span> the current monitor. It has no parameters. If you forget this directive, no file monitoring will take place.</li>
-			<li>
-				<span style="font-weight: bold;">$InputFilePollInterval seconds</span><br />
-				equivalent to: PollingInterva</li>
-			<li>
-				<b>$InputFilePersistStateInterval</b> [lines]<br />
-				Available in 4.7.3+, 5.6.2+<br />
-				equivalent to: PersistStateInterval</li>
-			<li>
-				<b>$InputFileReadMode</b> [mode]<br />
-				Available in 5.7.5+<br />
-				equivalent to: ReadMode</li>
-			<li>
-				<b>$InputFileMaxLinesAtOnce</b> [number]<br />
-				Available in 5.9.0+<br />
-				equivalent to: MaxLinesAtOnce</li>
-			<li>
-				$InputFileBindRuleset &lt;ruleset&gt;<br />
-				Available in 5.7.5+, 6.1.5+<br />
-				equivalent to: Ruleset</li>
-		</ul>
-		<p>
-			<b>Caveats/Known Bugs:</b></p>
-		<p>
-			So far, only 100 files can be monitored. If more are needed, the source needs to be patched. See define MAX_INPUT_FILES in imfile.c</p>
-		<p>
-			Powertop users may want to notice that imfile utilizes polling. Thus, it is no good citizen when it comes to conserving system power consumption. We are currently evaluating to move to inotify(). However, there are a number of subtle issues, which needs to be worked out first. We will make the change as soon as we can. If you can afford it, we recommend using a long polling interval in the mean time.</p>
-		<p>
-			<b>Sample:</b></p>
-		<p>
-			The following sample monitors two files. If you need just one, remove the second one. If you need more, add them according to the sample ;). This code must be placed in /etc/rsyslog.conf (or wherever your distro puts rsyslog&#39;s config files). Note that only commands actually needed need to be specified. The second file uses less commands and uses defaults instead.</p>
-		<p>
-			<textarea cols="60" rows="15">$ModLoad imfile # needs to be done just once
+input(type="imfile" File="/path/to/file2" 
+      Tag="tag2" 
+      StateFile="/var/spool/rsyslog/statefile2")
+# ... and so on ...
+#
+</textarea>
+
+
+<p><b>Legacy Configuration Directives</b>:</p>
+<ul>
+<li><strong>$InputFileName&nbsp;/path/to/file</strong><br>
+equivalent to: File </li>
+<li><span style="font-weight: bold;">$InputFileTag
+tag:</span><br>
+equivalent to: Tag </li>
+<li><span style="font-weight: bold;">$InputFileStateFile
+&lt;name-of-state-file&gt;</span><br>
+equivalent to: StateFile </li>
+<li><span style="font-weight: bold;">$InputFileFacility
+facility</span><br>
+equivalent to: Facility </span></li>
+<li><span style="font-weight: bold;">$InputFileSeverity</span><br>
+equivalent to: Severity</li>
+<li><span style="font-weight: bold;">$InputRunFileMonitor</span><br>
+This <span style="font-weight: bold;">activates</span>
+the current monitor. It has no parameters. If you forget this
+directive, no file monitoring will take place.</li>
+<li><span style="font-weight: bold;">$InputFilePollInterval
+seconds</span><br>
+equivalent to: PollingInterva</li>
+<li><b>$InputFilePersistStateInterval</b> [lines]</b><br>
+Available in 4.7.3+, 5.6.2+<br>
+equivalent to: PersistStateInterval 
+<li><b>$InputFileReadMode</b> [mode]</b><br>
+Available in 5.7.5+<br>
+equivalent to:  ReadMode 
+<li><b>$InputFileMaxLinesAtOnce</b> [number]</b><br>
+Available in 5.9.0+<br>
+equivalent to: MaxLinesAtOnce 
+<li>$InputFileBindRuleset &lt;ruleset&gt;<br>
+Available in 5.7.5+, 6.1.5+<br>
+equivalent to: Ruleset </li>
+</ul>
+<b>Caveats/Known Bugs:</b>
+<p>So far, only 100 files can be monitored. If more are needed,
+the source needs to be patched. See define MAX_INPUT_FILES in imfile.c</p><p>Powertop
+users may want to notice that imfile utilizes polling. Thus, it is no
+good citizen when it comes to conserving system power consumption. We
+are currently evaluating to move to inotify(). However, there are a
+number of subtle issues, which needs to be worked out first. We will
+make the change as soon as we can. If you can afford it, we recommend
+using a long polling interval in the mean time.
+</p>
+<p><b>Sample:</b></p>
+<p>The following sample monitors two files. If you need just one,
+remove the second one. If you need more, add them according to the
+sample ;). This code must be placed in /etc/rsyslog.conf (or wherever
+your distro puts rsyslog's config files). Note that only commands
+actually needed need to be specified. The second file uses less
+commands and uses defaults instead.<br>
+</p>
+<textarea rows="15" cols="60">$ModLoad imfile # needs to be done just once
 # File 1
 $InputFileName /path/to/file1
 $InputFileTag tag1:
@@ -158,18 +420,90 @@ $InputFileStateFile stat-file1
 $InputFileSeverity error
 $InputFileFacility local7
 $InputRunFileMonitor
-# File 2 
-$InputFileName /path/to/file2 
-$InputFileTag tag2: 
-$InputFileStateFile stat-file2 
-$InputRunFileMonitor 
-# ... and so on ... # 
-# check for new lines every 10 seconds 
-$InputFilePollingInterval 10</textarea></p>
-		<p>
-			[<a href="rsyslog_conf.html">rsyslog.conf overview</a>] [<a href="manual.html">manual index</a>] [<a href="http://www.rsyslog.com/">rsyslog site</a>]</p>
-		<p>
-			<font size="2">This documentation is part of the <a href="http://www.rsyslog.com/">rsyslog</a> project.<br />
-			Copyright &copy; 2008 by <a href="http://www.gerhards.net/rainer">Rainer Gerhards</a> and <a href="http://www.adiscon.com/">Adiscon</a>. Released under the GNU GPL version 3 or higher.</font></p>
-	</body>
+# File 2
+$InputFileName /path/to/file2
+$InputFileTag tag2:
+$InputFileStateFile stat-file2
+$InputRunFileMonitor
+# ... and so on ...
+#
+# check for new lines every 10 seconds
+$InputFilePollingInterval 10
+</textarea>
+<p>[<a href="rsyslog_conf.html">rsyslog.conf overview</a>]
+[<a href="manual.html">manual index</a>] [<a href="http://www.rsyslog.com/">rsyslog site</a>]</p>
+<p><font size="2">This documentation is part of the
+<a href="http://www.rsyslog.com/">rsyslog</a> project.<br>
+Copyright &copy; 2008 by <a href="http://www.gerhards.net/rainer">Rainer
+Gerhards</a> and <a href="http://www.adiscon.com/">Adiscon</a>.
+Released under the GNU GPL version 3 or higher.</font></p>
+	</div>
+
+
+<hr />
+<div id="footer" role="contentinfo">
+
+<table width="100%" cellpadding="0" cellspacing="0">
+<tr valign="top">
+	<td width="33%">
+	 <span class="tbold">About</span>
+	 <ul>
+		<li><a href="http://www.rsyslog.com/contact-us">Contact us!</a></li>
+		<li><a href="http://loganalyzer.adiscon.com">LogAnalyzer</a></li>
+		<li><a href="http://www.winsyslog.com">Windows Syslog</a></li>
+		<li><a href="http://blog.gerhards.net/">Rainer's Blog</a></li>
+		<li><a href="https://plus.google.com/+rsyslog/">rsyslog on Google+</a></li>
+		<li><a href="https://www.facebook.com/RSyslog">rsyslog on Facebook</a></li>
+	 </ul>
+	</td>
+
+	<td width="33%" align="center"><div class="lefttextbottom">
+		<span class="tbold">News</span>
+	 <ul>
+		<li><a href="http://www.rsyslog.com/rsyslog-7-5-1-v7-devel-released/" rel="bookmark">
+	rsyslog 7.5.1 (v7-devel) released	</a></li>
+		<li><a href="http://www.rsyslog.com/rsyslog-7-4-1-v7-stable-released/" rel="bookmark">
+	rsyslog 7.4.1 (v7-stable) released	</a></li>
+		<li><a href="http://www.rsyslog.com/rsyslog-7-5-0-v7-devel-released/" rel="bookmark">
+	rsyslog 7.5.0 (v7-devel) released	</a></li>
+		<li><a href="http://www.rsyslog.com/rsyslog-7-4-0-v7-stable-released/" rel="bookmark">
+	rsyslog 7.4.0 (v7-stable) released	</a></li>
+		<li><a href="http://www.rsyslog.com/7-4-0-the-new-stable/" rel="bookmark">
+	7.4.0 &#8211; the new stable	</a></li>
+		</ul></div>
+	</td>
+
+	<td width="33%" align="right"><div class="lefttextbottom">
+	<span class="tbold">Discussion</span>
+		<ul><li><a href="http://kb.monitorware.com/viewtopic.php?f=36&#038;t=12038&#038;sid=69186233625b6570119f1f5ea5028be8" title="I&#039;m relatively new to rsyslog, and I&#039;m tasked with setting up a s ... ">need help with forwarding</a></li><li><a href="http://kb.monitorware.com/viewtopic.php?f=34&#038;t=12037&#038;sid=69186233625b6570119f1f5ea5028be8" title="I&#039;m new to rsyslog and I am having trouble creating dynamic files ... ">Trouble Creating dynamic log directories ... </a></li><li><a href="http://kb.monitorware.com/viewtopic.php?f=36&#038;t=12033&#038;sid=69186233625b6570119f1f5ea5028be8" title="There is a parameter available for option 1, but I don&#039;t remember ... ">Re: how to ignore 95% of specific messag ... </a></li><li><a href="http://kb.monitorware.com/viewtopic.php?f=36&#038;t=12036&#038;sid=69186233625b6570119f1f5ea5028be8" title="Ok, I tried to do ...On log server : /etc/rsyslog.confAnd on clie ... ">Re: Add new log</a></li><li><a href="http://kb.monitorware.com/viewtopic.php?f=36&#038;t=12035&#038;sid=69186233625b6570119f1f5ea5028be8" title="hi rgerhards ,I have post the client and server configuration fil ... ">Re: Configure rsyslog as a relay server ... </a></li></ul></div> 
+
+
+	</td>
+</tr>
+</table>
+
+	<p>&copy; Adiscon's rsyslog | <a href="http://www.rsyslog.com/feed/" rel="nofollow">Entries (RSS)</a> | Loaded in 0.457 seconds.
+		<!-- 53 queries. 0.457 seconds. -->	</p>
+</div>
+</div>
+
+
+		<!-- begin visitor maps  -->
+<script type="text/javascript">
+//<![CDATA[
+function wo_map_console(url) {
+  window.open(url,"wo_map_console","height=650,width=800,toolbar=no,statusbar=no,scrollbars=yes").focus();
+}
+//]]>
+</script>
+<!-- end visitor maps -->
+
+<script type="text/javascript">
+var gaJsHost = (("https:" == document.location.protocol) ? "https://ssl." : "http://www."); document.write(unescape("%3Cscript src='" + gaJsHost + "google-analytics.com/ga.js' type='text/javascript'%3E%3C/script%3E"));
+</script>
+<script type="text/javascript">
+try {
+var pageTracker = _gat._getTracker("UA-308011-6"); pageTracker._trackPageview(); } catch(err) {}</script>
+
+</body>
 </html>
