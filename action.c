@@ -1,5 +1,5 @@
 /* action.c
- *
+ * test
  * Implementation of the action object.
  *
  * File begun on 2007-08-06 by RGerhards (extracted from syslogd.c)
